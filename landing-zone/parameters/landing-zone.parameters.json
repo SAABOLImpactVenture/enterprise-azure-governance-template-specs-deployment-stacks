@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "vnetName": {
+      "value": "landingZone-vnet"
+    },
+    "addressPrefix": {
+      "value": "10.0.0.0/16"
+    },
+    "subnetPrefix": {
+      "value": "10.0.1.0/24"
+    },
+    "diagnosticsWorkspaceId": {
+      "value": "/subscriptions/<your-subscription-id>/resourceGroups/<your-log-analytics-rg>/providers/Microsoft.OperationalInsights/workspaces/<your-workspace-name>"
+    }
+  }
+}
+//Please update the placeholders (<your-subscription-id>, etc.) with your actual Azure values

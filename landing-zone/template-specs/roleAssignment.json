@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01-preview/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "roleDefinitionId": {
+      "type": "string",
+      "metadata": {
+        "description": "The role definition ID (GUID) or built-in role name (e.g., Contributor)."
+      }
+    },
+    "principalId": {
+      "type": "string",
+      "metadata": {
+        "description": "The Azure AD object ID of the user, group, or service principal to assign the role to."
+      }
+    },
+    "scope": {
+      "type": "string",
+      "defaultValue": "[subscription().id]",
+      "metadata": {
+        "description": "The scope for the role assignment (e.g., subscription, resource group)."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(parameters('scope'), parameters('principalId'), parameters('roleDefinitionId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+        "principalId": "[parameters('principalId')]",
+        "scope": "[parameters('scope')]"
+      }
+    }
+  ]
+}

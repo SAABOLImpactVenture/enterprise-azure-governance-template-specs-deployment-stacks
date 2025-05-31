@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "labName": {
+      "value": "Dev_Test_Lab"
+    },
+    "vmName": {
+      "value": "demosmartcontract-vm"
+    },
+    "dnsName": {
+      "value": "smartcontractvmdns"
+    },
+    "sshPublicKey": {
+      "value": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD..."  // Replace with your actual SSH key
+    },
+    "labVirtualNetworkId": {
+      "value": "/subscriptions/<your-subscription-id>/resourceGroups/Dev_Test_Lab-demosmartcontract-vm-017910/providers/Microsoft.DevTestLab/labs/Dev_Test_Lab/virtualnetworks/DtlDev_Test_Lab"
+    }
+  }
+}

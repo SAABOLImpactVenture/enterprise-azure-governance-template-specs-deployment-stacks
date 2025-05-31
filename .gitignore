@@ -1,0 +1,32 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Hardhat artifacts and cache
+artifacts/
+cache/
+coverage/
+typechain/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# VS Code settings
+.vscode/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Bicep build outputs
+*.bicep.params.json
+
+# Compiled contract flattening (if used)
+flattened/

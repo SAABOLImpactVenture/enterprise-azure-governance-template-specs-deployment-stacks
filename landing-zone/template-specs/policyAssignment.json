@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-09-01/policyDefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "policyDefinitionId": {
+      "type": "string",
+      "metadata": {
+        "description": "The resource ID of the policy definition to assign."
+      }
+    },
+    "assignmentName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the policy assignment."
+      }
+    },
+    "scope": {
+      "type": "string",
+      "metadata": {
+        "description": "The scope at which the policy will be assigned."
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Parameters required by the policy definition."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('assignmentName')]",
+      "scope": "[parameters('scope')]",
+      "properties": {
+        "policyDefinitionId": "[parameters('policyDefinitionId')]",
+        "parameters": "[parameters('parameters')]"
+      }
+    }
+  ]
+}
