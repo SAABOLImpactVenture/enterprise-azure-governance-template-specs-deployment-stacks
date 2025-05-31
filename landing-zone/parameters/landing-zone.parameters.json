@@ -5,6 +5,9 @@
     "location": {
       "value": "eastus"
     },
+    "rgName": {
+      "value": "landingZone-RG"
+    },
     "vnetName": {
       "value": "landingZone-vnet"
     },
@@ -15,8 +18,7 @@
       "value": "10.0.1.0/24"
     },
     "diagnosticsWorkspaceId": {
-      "value": "/subscriptions/<your-subscription-id>/resourceGroups/<your-log-analytics-rg>/providers/Microsoft.OperationalInsights/workspaces/<your-workspace-name>"
+      "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
     }
   }
 }
-//Please update the placeholders (<your-subscription-id>, etc.) with your actual Azure values

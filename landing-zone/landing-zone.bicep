@@ -1,30 +1,26 @@
-// ─────────────────────────────────────────────────────────────────────────────────
-// File: landing‐zone/landing‐zone.bicep
+// ─────────────────────────────────────────────────────────────────────────────
+// File: landing-zone/landing-zone.bicep
 // Description: Subscription‐scoped landing‐zone that:
-//   1) Creates a new resource group: "landingZone‐RG"
+//   1) Creates (or updates) a Resource Group named "landingZone-RG"
 //   2) Inside that RG, creates a Virtual Network + default subnet
-//   3) Attaches Diagnostic Settings (logs & metrics) on that VNet to a Log Analytics workspace
+//   3) Attaches Diagnostic Settings on that VNet pointing to a Log Analytics workspace
 //
-// NOTE: Because this file creates a Resource Group first, it must be deployed at
-//       subscription scope using `az deployment sub create`. We declare:
-//         targetScope = 'subscription'
-// ─────────────────────────────────────────────────────────────────────────────────
-
-// 1) Declare subscription scope
+// Because we are creating a Resource Group from subscription scope, we must deploy
+// this with `az deployment sub create …`. Therefore:
 targetScope = 'subscription'
 
-// 2) Parameters
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 1) Parameters
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Location for the new Resource Group (and VNet inside it)
+// Location for the new Resource Group (and all child resources inside it)
 param location string = 'eastus'
 
-// Name of the Resource Group to create for the landing zone
-// (You may change this default; the template will create or update it.)
-param rgName string = 'landingZone‐RG'
+// Name of the Resource Group to create or update
+param rgName string = 'landingZone-RG'
 
 // Name of the Virtual Network to create inside that RG
-param vnetName string = 'landingZone‐vnet'
+param vnetName string = 'landingZone-vnet'
 
 // Address space to use on the VNet
 param addressPrefix string = '10.0.0.0/16'
@@ -32,25 +28,27 @@ param addressPrefix string = '10.0.0.0/16'
 // Address prefix of the default subnet inside the VNet
 param subnetPrefix string = '10.0.1.0/24'
 
-// The full resource ID of your Log Analytics workspace, e.g.:
-// "/subscriptions/00000000‐0000‐0000‐0000‐000000000000/
-//    resourceGroups/LogAnalytics‐RG/
+// The full resource ID of your Log Analytics workspace, for example:
+// "/subscriptions/00000000-0000-0000-0000-000000000000/
+//    resourceGroups/LogAnalytics-RG/
 //    providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
 param diagnosticsWorkspaceId string
 
-// 3) Resources
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 2) Resources
+// ─────────────────────────────────────────────────────────────────────────────
 
-// 3.1) Create (or update) the landing‐zone Resource Group
-resource landingRG 'Microsoft.Resources/resourceGroups@2021‐04‐01' = {
+// 2.1) Create (or update) the RG named in `rgName`
+//     API version must be a valid ASCII string: "2021-04-01"
+resource landingRG 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name:     rgName
   location: location
 }
 
-// 3.2) Create a Virtual Network in that Resource Group
-resource vnet 'Microsoft.Network/virtualNetworks@2022‐09‐01' = {
+// 2.2) Create a Virtual Network *inside* that RG
+resource vnet 'Microsoft.Network/virtualNetworks@2022-09-01' = {
   name:  vnetName
-  scope: landingRG
+  scope: landingRG    // This ensures the VNet is deployed into landingRG
   properties: {
     addressSpace: {
       addressPrefixes: [
@@ -68,10 +66,10 @@ resource vnet 'Microsoft.Network/virtualNetworks@2022‐09‐01' = {
   }
 }
 
-// 3.3) Attach Diagnostic Settings to the VNet so that logs & metrics go to your workspace
-resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021‐05‐01‐preview' = {
+// 2.3) Configure Diagnostic Settings on that VNet so logs/metrics flow to the workspace
+resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name:  'vnetDiagnostics'
-  scope: vnet
+  scope: vnet         // Apply this diagnostic setting *to* the VNet resource
   properties: {
     workspaceId: diagnosticsWorkspaceId
 
@@ -84,7 +82,6 @@ resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021‐05‐01‐pr
           days:    0
         }
       }
-      // You can add more log categories here if needed
     ]
 
     metrics: [
@@ -96,13 +93,13 @@ resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021‐05‐01‐pr
           days:    0
         }
       }
-      // You can add more metric categories here if needed
     ]
   }
 }
 
-// 4) Outputs (optional) – in case you need to reference them downstream
-// ─────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 3) Outputs (optional) – in case you need to reference them downstream
+// ─────────────────────────────────────────────────────────────────────────────
 
 output landingRGId string = landingRG.id
 output vnetId       string = vnet.id
