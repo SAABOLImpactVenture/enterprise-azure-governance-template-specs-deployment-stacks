@@ -1,51 +1,34 @@
-param location string = resourceGroup().location
-param nsgName string = 'landingZone-nsg'
-param allowedSshSourceIp string = '203.0.113.10/32' // Replace with your IP or CIDR
+// ─────────────────────────────────────────────────────────────────────────────
+// File: landing-zone/modules/nsg.bicep
+// Description: Creates a Network Security Group (NSG) and associates it to a
+// subnet within the VNet inside its RG.
+// ─────────────────────────────────────────────────────────────────────────────
 
-resource nsg 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
-  name: nsgName
+targetScope = 'resourceGroup'
+
+// Parameters passed in from the orchestrator:
+param nsgName    string
+param vnetName   string
+param subnetName string
+param rules      array
+param location   string
+
+// 1) Create (or update) the NSG
+resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
+  name:     nsgName
   location: location
   properties: {
-    securityRules: [
-      {
-        name: 'Allow-SSH'
-        properties: {
-          priority: 100
-          direction: 'Inbound'
-          access: 'Allow'
-          protocol: 'Tcp'
-          sourcePortRange: '*'
-          destinationPortRange: '22'
-          sourceAddressPrefix: allowedSshSourceIp
-          destinationAddressPrefix: '*'
-        }
-      }
-      {
-        name: 'Allow-Internet-Outbound'
-        properties: {
-          priority: 1000
-          direction: 'Outbound'
-          access: 'Allow'
-          protocol: '*'
-          sourcePortRange: '*'
-          destinationPortRange: '*'
-          sourceAddressPrefix: '*'
-          destinationAddressPrefix: 'Internet'
-        }
-      }
-      {
-        name: 'Deny-All-Inbound'
-        properties: {
-          priority: 4096
-          direction: 'Inbound'
-          access: 'Deny'
-          protocol: '*'
-          sourcePortRange: '*'
-          destinationPortRange: '*'
-          sourceAddressPrefix: '*'
-          destinationAddressPrefix: '*'
-        }
-      }
-    ]
+    securityRules: rules
   }
 }
+
+// 2) Associate the NSG to the specified subnet of the VNet
+resource assoc 'Microsoft.Network/virtualNetworks/subnets/networkSecurityGroups@2022-05-01' = {
+  name:   '${vnetName}/${subnetName}/${nsgName}'
+  parent: resourceId('Microsoft.Network/virtualNetworks', vnetName, 'subnets', subnetName)
+  properties: {
+    id: nsg.id
+  }
+}
+
+output nsgId string = nsg.id

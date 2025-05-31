@@ -17,6 +17,40 @@
     "subnetPrefix": {
       "value": "10.0.1.0/24"
     },
+    "nsgName": {
+      "value": "landingZone-NSG"
+    },
+    "nsgRules": {
+      "value": [
+        {
+          "name": "AllowSSH",
+          "priority": 100,
+          "direction": "Inbound",
+          "access": "Allow",
+          "protocol": "Tcp",
+          "sourcePortRange": "*",
+          "destinationPortRange": "22",
+          "sourceAddressPrefix": "*",
+          "destinationAddressPrefix": "*",
+          "description": "Allow SSH from anywhere"
+        },
+        {
+          "name": "DenyAllInbound",
+          "priority": 4096,
+          "direction": "Inbound",
+          "access": "Deny",
+          "protocol": "*",
+          "sourcePortRange": "*",
+          "destinationPortRange": "*",
+          "sourceAddressPrefix": "*",
+          "destinationAddressPrefix": "*",
+          "description": "Deny all other inbound traffic"
+        }
+      ]
+    },
+    "vmName": {
+      "value": "landingZone-VM"
+    },
     "diagnosticsWorkspaceId": {
       "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
     }

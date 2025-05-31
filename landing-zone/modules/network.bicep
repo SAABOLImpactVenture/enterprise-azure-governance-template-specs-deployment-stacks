@@ -1,12 +1,20 @@
-param location string = resourceGroup().location
-param vnetName string
-param addressPrefix string
-param subnetPrefix string
-param subnetName string = 'subnet1'
-param nsgName string = 'landingZone-nsg'
+// ─────────────────────────────────────────────────────────────────────────────
+// File: landing-zone/modules/network.bicep
+// Description: Creates a Virtual Network (+ default subnet) inside its RG.
+// Metrics, NSG, etc. are applied in separate modules.
+// ─────────────────────────────────────────────────────────────────────────────
 
-resource vnet 'Microsoft.Network/virtualNetworks@2021-02-01' = {
-  name: vnetName
+targetScope = 'resourceGroup'
+
+// Parameters passed in from the orchestrator:
+param vnetName      string
+param addressPrefix string
+param subnetPrefix  string
+param location      string
+
+// Create (or update) the Virtual Network
+resource vnet 'Microsoft.Network/virtualNetworks@2022-09-01' = {
+  name:     vnetName
   location: location
   properties: {
     addressSpace: {
@@ -16,14 +24,15 @@ resource vnet 'Microsoft.Network/virtualNetworks@2021-02-01' = {
     }
     subnets: [
       {
-        name: subnetName
+        name: 'default'
         properties: {
           addressPrefix: subnetPrefix
-          networkSecurityGroup: {
-            id: resourceId('Microsoft.Network/networkSecurityGroups', nsgName)
-          }
         }
       }
     ]
   }
 }
+
+// Outputs so the parent can reference them
+output vnetId   string = vnet.id
+output subnetId string = vnet.properties.subnets[0].id

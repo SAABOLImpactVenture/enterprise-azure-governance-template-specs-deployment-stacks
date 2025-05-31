@@ -1,35 +1,24 @@
-@description('Name of the policy definition')
-param policyDefinitionName string
+// ─────────────────────────────────────────────────────────────────────────────
+// File: landing-zone/modules/policy.bicep
+// Description: Creates a Policy Assignment from JSON parameters.
+// ─────────────────────────────────────────────────────────────────────────────
 
-@description('Display name for the policy definition')
-param displayName string
+targetScope = 'resourceGroup'
 
-@description('Description of the policy definition')
-param description string
+// Parameters passed in from the orchestrator:
+param assignmentName      string
+param assignmentScope     string   // e.g. "/subscriptions/…/resourceGroups/landingZone-RG"
+param policyDefinitionId  string   // e.g. built-in or custom policy definition ID
+param policyParameters    object   // JSON object for policy parameters
 
-@description('Policy rule definition as an object')
-param policyRule object
-
-@description('Policy parameters as an object')
-@allowed([
-  {}
-])
-param parameters object = {}
-
-@description('The policy mode, such as "All", "Indexed", or "Microsoft.ContainerService.Data"')
-@allowed([
-  'All'
-  'Indexed'
-])
-param policyMode string = 'All'
-
-resource policyDefinition 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
-  name: policyDefinitionName
+resource policyAssignment 'Microsoft.Authorization/policyAssignments@2020-09-01' = {
+  name:       assignmentName
+  scope:      assignmentScope
   properties: {
-    displayName: displayName
-    description: description
-    mode: policyMode
-    policyRule: policyRule
-    parameters: parameters
+    displayName:       assignmentName
+    policyDefinitionId: policyDefinitionId
+    parameters:        policyParameters
   }
 }
+
+output policyAssignmentId string = policyAssignment.id

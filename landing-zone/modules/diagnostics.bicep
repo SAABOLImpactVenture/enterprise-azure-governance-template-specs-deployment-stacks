@@ -1,44 +1,50 @@
-@description('Name of the resource to enable diagnostics on (e.g., VM or NSG)')
-param targetResourceName string
+// ─────────────────────────────────────────────────────────────────────────────
+// File: landing-zone/modules/diagnostics.bicep
+// Description: Configures Diagnostic Settings on a given resource (e.g. a VNet).
+// ─────────────────────────────────────────────────────────────────────────────
 
-@description('Resource type to enable diagnostics on (e.g., Microsoft.Network/networkSecurityGroups or Microsoft.Compute/virtualMachines)')
-param targetResourceType string
+targetScope = 'resourceGroup'
 
-@description('Resource ID of the Log Analytics Workspace')
-param workspaceResourceId string
+// Parameters passed in from the orchestrator:
+param resourceId string  // e.g. the VNet ID from networkModule.outputs.vnetId
+param workspaceId string // e.g. Log Analytics workspace resource ID
+param location    string // (optional, not strictly needed, but kept for parity)
 
-resource diagSetting 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'enable-diagnostics-${targetResourceName}'
-  scope: resource(targetResourceType, targetResourceName)
+// 1) Attach diagnostic settings to that resource
+resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name:  'resourceDiagnostics'
+  scope: resource(resourceId)
   properties: {
-    workspaceId: workspaceResourceId
+    workspaceId: workspaceId
     logs: [
       {
-        category: 'AuditEvent'
-        enabled: true
+        category: 'NetworkSecurityGroupEvent'
+        enabled:  true
         retentionPolicy: {
           enabled: false
-          days: 0
+          days:    0
         }
       }
       {
-        category: 'Security'
-        enabled: true
+        category: 'SubnetSecurityEvents'
+        enabled:  true
         retentionPolicy: {
           enabled: false
-          days: 0
+          days:    0
         }
       }
     ]
     metrics: [
       {
         category: 'AllMetrics'
-        enabled: true
+        enabled:  true
         retentionPolicy: {
           enabled: false
-          days: 0
+          days:    0
         }
       }
     ]
   }
 }
+
+output diagSettingsId string = diagSettings.id

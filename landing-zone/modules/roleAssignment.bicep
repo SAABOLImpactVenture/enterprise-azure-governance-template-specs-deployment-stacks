@@ -1,21 +1,23 @@
-@description('The name of the Role Assignment. It must be a GUID.')
-param roleAssignmentName string
+// ─────────────────────────────────────────────────────────────────────────────
+// File: landing-zone/modules/roleAssignment.bicep
+// Description: Creates a Role Assignment from JSON parameters.
+// ─────────────────────────────────────────────────────────────────────────────
 
-@description('The scope at which the role assignment applies (e.g., a subscription, resource group, or resource).')
-param scope string
+targetScope = 'resourceGroup'
 
-@description('The role definition ID or built-in role definition ID (e.g., Reader, Contributor, Owner).')
-param roleDefinitionId string
-
-@description('The principal ID (Object ID) of the user, group, or service principal to assign the role to.')
-param principalId string
+// Parameters passed in from the orchestrator:
+param roleAssignmentName string  // e.g. "landingZone-ReaderAssignment"
+param principalId        string  // e.g. AAD Object ID of a user/service principal
+param roleDefinitionId   string  // e.g. "/subscriptions/…/providers/Microsoft.Authorization/roleDefinitions/{roleGuid}"
+param assignmentScope    string  // e.g. "/subscriptions/…/resourceGroups/landingZone-RG"
 
 resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = {
-  name: roleAssignmentName
-  scope: scope
+  name:   roleAssignmentName
+  scope:  assignmentScope
   properties: {
     roleDefinitionId: roleDefinitionId
-    principalId: principalId
-    principalType: 'ServicePrincipal' // You can change to 'User' or 'Group' if needed
+    principalId:      principalId
   }
 }
+
+output roleAssignmentId string = roleAssignment.id

@@ -1,6 +1,12 @@
-# ------------------------------------------------------------
-# .github/workflows/landing-zone-ci.yml
-# ------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# File: .github/workflows/landing-zone-ci.yml
+# Description: Deploy the subscription‐scoped landing‐zone orchestrator using OIDC.
+#
+#   • Trigger: On push to main that touches landing‐zone.bicep, landing‐zone.parameters.json,
+#     or this workflow file.
+#   • Azure login via azure/login@v1 (OIDC, no client secret).
+#   • Run `az deployment sub create …` to execute landing‐zone.bicep.
+# ─────────────────────────────────────────────────────────────────────────────
 name: Deploy Landing Zone
 
 on:
@@ -9,20 +15,25 @@ on:
       - main
     paths:
       - 'landing-zone/landing-zone.bicep'
-      - 'landing-zone/modules/parameters/landing-zone.parameters.json'
+      - 'landing-zone/parameters/landing-zone.parameters.json'
       - '.github/workflows/landing-zone-ci.yml'
 
 permissions:
-  id-token: write
-  contents: read
+  id-token: write   # Needed by azure/login@v1 to fetch an OIDC token
+  contents:  read   # Needed to checkout the repo
 
 jobs:
   deploy-landing-zone:
     runs-on: ubuntu-latest
+
     steps:
+      # 1) Checkout the repository to access Bicep + JSON files
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2) Login to Azure via OIDC. You must have a Branch-type Federated Credential
+      #    configured in Azure AD for:
+      #      repo:YourOrg/YourRepo:ref:refs/heads/main
       - name: Azure Login using OIDC
         uses: azure/login@v1
         with:
@@ -30,9 +41,10 @@ jobs:
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy landing-zone.bicep at Subscription Scope
+      # 3) Deploy the subscription-scoped landing-zone.bicep
+      - name: Deploy landing-zone.bicep (Subscription Scope)
         run: |
           az deployment sub create \
             --location eastus \
             --template-file landing-zone/landing-zone.bicep \
-            --parameters landing-zone/modules/parameters/landing-zone.parameters.json
+            --parameters landing-zone/parameters/landing-zone.parameters.json
