@@ -1,31 +1,38 @@
-name: Deploy Landing Zone Infrastructure
+# ------------------------------------------------------------
+# .github/workflows/landing-zone-ci.yml
+# ------------------------------------------------------------
+name: Deploy Landing Zone
 
 on:
   push:
+    branches:
+      - main
     paths:
-      - 'landing-zone/**'
+      - 'landing-zone/landing-zone.bicep'
+      - 'landing-zone/modules/parameters/landing-zone.parameters.json'
       - '.github/workflows/landing-zone-ci.yml'
-  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  deploy:
+  deploy-landing-zone:
     runs-on: ubuntu-latest
-    environment: production
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Azure Login
+      - name: Azure Login using OIDC
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy Landing Zone Bicep Template
-        uses: azure/arm-deploy@v1
-        with:
-          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          template: ./landing-zone/landing-zone.bicep
-          parameters: ./landing-zone/parameters/landing-zone.parameters.json
-          deploymentName: landingZoneDeployment
+      - name: Deploy landing-zone.bicep at Subscription Scope
+        run: |
+          az deployment sub create \
+            --location eastus \
+            --template-file landing-zone/landing-zone.bicep \
+            --parameters landing-zone/modules/parameters/landing-zone.parameters.json

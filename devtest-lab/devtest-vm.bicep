@@ -32,3 +32,4 @@ resource labVm 'Microsoft.DevTestLab/labs/virtualmachines@2018-09-15' = {
     project: 'SmartContract'
   }
 }
+//minor change
