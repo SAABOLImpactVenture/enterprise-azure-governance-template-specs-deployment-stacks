@@ -1,25 +1,22 @@
-# Variables – replace with your actual values
+# Replace with actual values from parameters
 $subscriptionId = "<your-subscription-id>"
-$resourceGroupName = "<your-resource-group>"
-$vmName = "<your-vm-name>"
-$workspaceResourceId = "/subscriptions/<your-subscription-id>/resourceGroups/<your-log-analytics-rg>/providers/Microsoft.OperationalInsights/workspaces/<your-workspace-name>"
+$resourceGroupName = "Dev_Test_Lab-demosmartcontract-vm-017910"
+$vmName = "demosmartcontract-vm"
+$diagnosticStorageAccountName = "<your-storage-account-name>"
 
-# Login and set subscription context
+# Login and set context
 Connect-AzAccount
 Set-AzContext -SubscriptionId $subscriptionId
 
-# Retrieve the VM resource ID
-$vm = Get-AzVM -ResourceGroupName $resourceGroupName -Name $vmName
-$vmResourceId = $vm.Id
+# Enable diagnostics
+Set-AzVMDiagnosticsExtension -ResourceGroupName $resourceGroupName `
+  -VMName $vmName `
+  -StorageAccountName $diagnosticStorageAccountName `
+  -Name "LinuxDiagnostics" `
+  -Publisher "Microsoft.Azure.Diagnostics" `
+  -Type "LinuxDiagnostic" `
+  -TypeHandlerVersion "4.0" `
+  -ProtectedSettingString "{}" `
+  -SettingString '{"ladCfg": {"diagnosticMonitorConfiguration": {"performanceCounters": {"performanceCounterConfiguration": []}}}}'
 
-# Define diagnostic setting name
-$diagSettingName = "VM-Diagnostics"
-
-# Create the diagnostic settings
-Set-AzDiagnosticSetting `
-  -Name $diagSettingName `
-  -ResourceId $vmResourceId `
-  -WorkspaceId $workspaceResourceId `
-  -Enabled $true `
-  -Category "AllMetrics","PerformanceCounters","EventLogs","Administrative","Security" `
-  -RetentionEnabled $false
+Write-Host "Diagnostics enabled for VM: $vmName"

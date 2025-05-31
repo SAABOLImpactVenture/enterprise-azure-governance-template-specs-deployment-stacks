@@ -16,6 +16,18 @@
     },
     "labVirtualNetworkId": {
       "value": "/subscriptions/<your-subscription-id>/resourceGroups/Dev_Test_Lab-demosmartcontract-vm-017910/providers/Microsoft.DevTestLab/labs/Dev_Test_Lab/virtualnetworks/DtlDev_Test_Lab"
+    },
+    "subscriptionId": {
+      "value": "<your-subscription-id>"
+    },
+    "resourceGroupName": {
+      "value": "Dev_Test_Lab-demosmartcontract-vm-017910"
+    },
+    "diagnosticStorageAccountName": {
+      "value": "<your-storage-account-name>"
+    },
+    "location": {
+      "value": "eastus"
     }
   }
 }

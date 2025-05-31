@@ -1,0 +1,43 @@
+name: Deploy DevTest Lab VM and Secure Access
+
+on:
+  workflow_run:
+    workflows: ["Deploy Landing Zone Infrastructure"]
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  deploy-devtest-vm:
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy DevTest VM Bicep Template
+        uses: azure/arm-deploy@v1
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          template: ./devtest-lab/devtest-vm.bicep
+          parameters: ./devtest-lab/parameters/devtest-vm.parameters.json
+          deploymentName: devtestVmDeployment
+
+      - name: Configure NSG Rules
+        shell: pwsh
+        run: ./devtest-lab/scripts/configure-nsg.ps1
+
+      - name: Enable Diagnostic Logs
+        shell: pwsh
+        run: ./devtest-lab/scripts/enable-diagnostics.ps1
+
+      - name: Enable Just-in-Time (JIT) Access
+        shell: pwsh
+        run: ./devtest-lab/scripts/enable-jit.ps1

@@ -1,34 +1,37 @@
-# Variables (Update these before running)
+# Replace with actual values from parameters
 $subscriptionId = "<your-subscription-id>"
-$resourceGroupName = "<your-resource-group>"
-$vmName = "<your-vm-name>"
+$resourceGroupName = "Dev_Test_Lab-demosmartcontract-vm-017910"
+$vmName = "demosmartcontract-vm"
 $location = "eastus"
 
-# Login and set subscription
+# Login and set context
 Connect-AzAccount
 Set-AzContext -SubscriptionId $subscriptionId
 
-# Construct the JIT policy configuration
+# Enable JIT
 $jitPolicy = @{
-    Location = $location
-    Name = $vmName
-    Kind = "Basic"
-    Properties = @{
-        VirtualMachines = @(
-            @{
-                Id = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/virtualMachines/$vmName"
-                Ports = @(
-                    @{
-                        Number = 22
-                        Protocol = "*"
-                        AllowedSourceAddressPrefix = "xxx.xxx.xxx.xxx/32" # Replace with your IP or CIDR range
-                        MaxRequestAccessDuration = "PT3H"
-                    }
-                )
-            }
+  location = $location
+  properties = @{
+    virtualMachines = @(
+      @{
+        id = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/virtualMachines/$vmName"
+        ports = @(
+          @{
+            number = 22
+            protocol = "Any"
+            allowedSourceAddressPrefix = "*"
+            maxRequestAccessDuration = "PT1H"
+          }
         )
-    }
+      }
+    )
+  }
 }
 
-# Register JIT Network Access Policy
-New-AzJitNetworkAccessPolicy @jitPolicy
+# Create JIT policy
+Set-AzJitNetworkAccessPolicy -ResourceGroupName $resourceGroupName `
+  -Name "$vmName-jit" `
+  -Location $location `
+  -VirtualMachine @($jitPolicy.properties.virtualMachines)
+
+Write-Host "JIT access enabled for VM: $vmName"

@@ -1,11 +1,11 @@
-#CI/CD for smart contracts
-name: Hardhat CI
+name: Smart Contract CI/CD
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_run:
+    workflows: ["Deploy DevTest Lab VM and Secure Access"]
+    types:
+      - completed
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -15,13 +15,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 18.x
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         working-directory: ./smart-contracts
 
       - name: Compile contracts
@@ -32,4 +32,6 @@ jobs:
         run: npx hardhat test
         working-directory: ./smart-contracts
 
-      
+      - name: Lint contracts
+        run: npx solhint 'contracts/**/*.sol'
+        working-directory: ./smart-contracts
