@@ -2,31 +2,17 @@
 pragma solidity ^0.8.20;
 
 contract MyContract {
-    uint256 private value;
-    address private owner;
+    string private value;
 
-    event ValueSet(uint256 newValue, address indexed setter);
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner can call this");
-        _;
+    constructor(string memory _value) {
+        value = _value;
     }
 
-    constructor(uint256 initialValue) {
-        value = initialValue;
-        owner = msg.sender;
-    }
-
-    function setValue(uint256 newValue) public onlyOwner {
-        value = newValue;
-        emit ValueSet(newValue, msg.sender);
-    }
-
-    function getValue() public view returns (uint256) {
+    function getValue() public view returns (string memory) {
         return value;
     }
 
-    function getOwner() public view returns (address) {
-        return owner;
+    function setValue(string memory _value) public {
+        value = _value;
     }
 }

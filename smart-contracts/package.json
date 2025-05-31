@@ -1,36 +1,15 @@
 {
-  "name": "smart-contracts",
-  "version": "1.0.0",
-  "description": "Solidity smart contract development with Hardhat, including CI/CD integration.",
-  "main": "index.js",
-  "scripts": {
-    "compile": "npx hardhat compile",
-    "test": "npx hardhat test",
-    "coverage": "npx hardhat coverage",
-    "lint": "npx solhint 'contracts/**/*.sol'",
-    "typechain": "npx hardhat typechain"
+  "network": "goerli",
+  "constructorArgs": {
+    "initialValue": 42
   },
-  "keywords": [
-    "solidity",
-    "smart-contracts",
-    "ethereum",
-    "hardhat",
-    "blockchain",
-    "ci/cd"
-  ],
-  "author": "Your Name or Team",
-  "license": "MIT",
+  "deployerAddress": "0xYourDeployerAddressHere",
+  "gasLimit": 3000000,
+  "gasPrice": "auto",
+  "verifyOnEtherscan": true,
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
-    "@typechain/ethers-v5": "^10.2.0",
-    "@typechain/hardhat": "^8.2.0",
-    "chai": "^4.3.7",
-    "dotenv": "^16.3.1",
-    "ethers": "^6.8.1",
-    "hardhat": "^2.24.0",
-    "hardhat-gas-reporter": "^1.0.9",
-    "solhint": "^3.3.7",
-    "solidity-coverage": "^0.8.1",
-    "typechain": "^8.4.0"
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.5.0",
+    "hardhat": "^2.24.1"
   }
 }
