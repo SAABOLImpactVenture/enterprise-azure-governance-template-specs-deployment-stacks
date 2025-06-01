@@ -2,7 +2,9 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    
+    // ───────────────────────────────────────────────────────────────────────────
+    // 1a) Subscription & Resource Group
+    // ───────────────────────────────────────────────────────────────────────────
     "location": {
       "value": "eastus"
     },
@@ -10,7 +12,9 @@
       "value": "landingZone-RG"
     },
 
-    
+    // ───────────────────────────────────────────────────────────────────────────
+    // 1b) Network module parameters
+    // ───────────────────────────────────────────────────────────────────────────
     "vnetName": {
       "value": "landingZone-vnet"
     },
@@ -21,7 +25,9 @@
       "value": "10.0.1.0/24"
     },
 
-    
+    // ───────────────────────────────────────────────────────────────────────────
+    // 1c) NSG module parameters (must include "protocol")
+    // ───────────────────────────────────────────────────────────────────────────
     "nsgName": {
       "value": "landingZone-NSG"
     },
@@ -32,7 +38,7 @@
           "priority": 100,
           "direction": "Inbound",
           "access": "Allow",
-          "protocol": "Tcp",
+          "protocol": "Tcp",                   // ← REQUIRED
           "sourcePortRange": "*",
           "destinationPortRange": "22",
           "sourceAddressPrefix": "*",
@@ -40,11 +46,23 @@
           "description": "Allow SSH from anywhere"
         },
         {
+          "name": "AllowHTTPS",
+          "priority": 200,
+          "direction": "Inbound",
+          "access": "Allow",
+          "protocol": "Tcp",                   // ← REQUIRED
+          "sourcePortRange": "*",
+          "destinationPortRange": "443",
+          "sourceAddressPrefix": "*",
+          "destinationAddressPrefix": "*",
+          "description": "Allow HTTPS from anywhere"
+        },
+        {
           "name": "DenyAllInbound",
           "priority": 4096,
           "direction": "Inbound",
           "access": "Deny",
-          "protocol": "*",
+          "protocol": "*",                     // ← REQUIRED (any protocol)
           "sourcePortRange": "*",
           "destinationPortRange": "*",
           "sourceAddressPrefix": "*",
@@ -54,16 +72,21 @@
       ]
     },
 
-   
+    // ───────────────────────────────────────────────────────────────────────────
+    // 1d) JIT module parameter
+    // ───────────────────────────────────────────────────────────────────────────
     "vmName": {
       "value": "landingZone-VM"
     },
 
-    
+    // ───────────────────────────────────────────────────────────────────────────
+    // 1e) Diagnostics module parameter
+    // ───────────────────────────────────────────────────────────────────────────
     "diagnosticsWorkspaceId": {
-      "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
+      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
     }
 
-    
+    // 1f & 1g) The policyAssignmentSpec and roleAssignmentSpec JSON are loaded directly
+    //           from the files under landing-zone/template-specs/, so you do NOT include them here.
   }
 }
