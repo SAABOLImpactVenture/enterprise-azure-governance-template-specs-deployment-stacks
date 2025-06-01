@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     // ───────────────────────────────────────────────────────────────────────────
-    // 1a) Subscription & Resource Group
+    // Subscription & Resource Group
     // ───────────────────────────────────────────────────────────────────────────
     "location": {
       "value": "eastus"
@@ -13,7 +13,7 @@
     },
 
     // ───────────────────────────────────────────────────────────────────────────
-    // 1b) Network module parameters
+    // Network module parameters
     // ───────────────────────────────────────────────────────────────────────────
     "vnetName": {
       "value": "landingZone-vnet"
@@ -26,7 +26,7 @@
     },
 
     // ───────────────────────────────────────────────────────────────────────────
-    // 1c) NSG module parameters (must include "protocol")
+    // NSG module parameters (each rule must include "protocol")
     // ───────────────────────────────────────────────────────────────────────────
     "nsgName": {
       "value": "landingZone-NSG"
@@ -62,7 +62,7 @@
           "priority": 4096,
           "direction": "Inbound",
           "access": "Deny",
-          "protocol": "*",                     // ← REQUIRED (any protocol)
+          "protocol": "*",                     // ← REQUIRED (matches any protocol)
           "sourcePortRange": "*",
           "destinationPortRange": "*",
           "sourceAddressPrefix": "*",
@@ -73,20 +73,22 @@
     },
 
     // ───────────────────────────────────────────────────────────────────────────
-    // 1d) JIT module parameter
+    // JIT module parameter
     // ───────────────────────────────────────────────────────────────────────────
     "vmName": {
       "value": "landingZone-VM"
     },
 
     // ───────────────────────────────────────────────────────────────────────────
-    // 1e) Diagnostics module parameter
+    // Diagnostics module parameter
     // ───────────────────────────────────────────────────────────────────────────
     "diagnosticsWorkspaceId": {
       "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
     }
 
-    // 1f & 1g) The policyAssignmentSpec and roleAssignmentSpec JSON are loaded directly
-    //           from the files under landing-zone/template-specs/, so you do NOT include them here.
+    // Note: Policy and Role Assignment specs are loaded directly from
+    //       landing-zone/template-specs/policyAssignment.json and
+    //       landing-zone/template-specs/roleAssignment.json via loadJsonContent(),
+    //       so they are NOT included here.
   }
 }
