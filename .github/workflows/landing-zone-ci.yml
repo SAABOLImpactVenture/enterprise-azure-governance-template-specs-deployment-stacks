@@ -1,11 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # File: .github/workflows/landing-zone-ci.yml
-# Description: Deploy the subscription‐scoped landing‐zone orchestrator using OIDC.
-#
-#   • Trigger: On push to main that touches landing‐zone.bicep, landing‐zone.parameters.json,
-#     or this workflow file.
-#   • Azure login via azure/login@v1 (OIDC, no client secret).
-#   • Run `az deployment sub create …` to execute landing‐zone.bicep.
+# Description: Deploy the subscription-scoped landing-zone orchestrator using OIDC.
+#   1) Trigger: On push to main that touches landing-zone.bicep or its parameters.
+#   2) Azure Login via azure/login@v1 (OIDC, no client secret).
+#   3) Run `az deployment sub create …` to execute landing-zone.bicep.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Deploy Landing Zone
 
@@ -19,21 +17,19 @@ on:
       - '.github/workflows/landing-zone-ci.yml'
 
 permissions:
-  id-token: write   # Needed by azure/login@v1 to fetch an OIDC token
-  contents:  read   # Needed to checkout the repo
+  id-token: write   # for OIDC login
+  contents:  read   # to checkout code
 
 jobs:
   deploy-landing-zone:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout the repository to access Bicep + JSON files
+      # 1) Checkout code
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2) Login to Azure via OIDC. You must have a Branch-type Federated Credential
-      #    configured in Azure AD for:
-      #      repo:YourOrg/YourRepo:ref:refs/heads/main
+      # 2) Azure OIDC login
       - name: Azure Login using OIDC
         uses: azure/login@v1
         with:
@@ -41,7 +37,7 @@ jobs:
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 3) Deploy the subscription-scoped landing-zone.bicep
+      # 3) Subscription-scope deploy
       - name: Deploy landing-zone.bicep (Subscription Scope)
         run: |
           az deployment sub create \

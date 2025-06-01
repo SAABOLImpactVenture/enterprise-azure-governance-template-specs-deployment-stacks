@@ -1,21 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // File: landing-zone/modules/diagnostics.bicep
-// Description: Configures Diagnostic Settings on a given resource (e.g. a VNet).
+// Description: Attaches Diagnostic Settings to a specified resource (e.g. VNet).
 // ─────────────────────────────────────────────────────────────────────────────
 
 targetScope = 'resourceGroup'
 
-// Parameters passed in from the orchestrator:
+// Parameters from the orchestrator
 param resourceId string  // e.g. the VNet ID from networkModule.outputs.vnetId
-param workspaceId string // e.g. Log Analytics workspace resource ID
-param location    string // (optional, not strictly needed, but kept for parity)
+param workspaceId string // e.g. your Log Analytics workspace resource ID
 
-// 1) Attach diagnostic settings to that resource
 resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name:  'resourceDiagnostics'
-  scope: resource(resourceId)
+  // We set the scope to the actual resource by ID:
+  scope: resourceId(resourceId)
   properties: {
     workspaceId: workspaceId
+
     logs: [
       {
         category: 'NetworkSecurityGroupEvent'
@@ -34,6 +34,7 @@ resource diagSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'
         }
       }
     ]
+
     metrics: [
       {
         category: 'AllMetrics'

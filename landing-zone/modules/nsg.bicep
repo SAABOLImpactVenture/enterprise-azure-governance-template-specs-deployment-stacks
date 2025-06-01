@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // File: landing-zone/modules/nsg.bicep
-// Description: Creates a Network Security Group (NSG) and associates it to a
-// subnet within the VNet inside its RG.
+// Description: Creates a Network Security Group (NSG) and associates it to
+// the specified subnet of the VNet inside the current RG.
 // ─────────────────────────────────────────────────────────────────────────────
 
 targetScope = 'resourceGroup'
 
-// Parameters passed in from the orchestrator:
+// Parameters from the orchestrator
 param nsgName    string
 param vnetName   string
 param subnetName string
@@ -23,9 +23,12 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
 }
 
 // 2) Associate the NSG to the specified subnet of the VNet
+//
+//    Instead of using `parent`, we fully qualify the child resource name
+//    in the format: "<VNetName>/<SubnetName>/<NSGName>".
+//
 resource assoc 'Microsoft.Network/virtualNetworks/subnets/networkSecurityGroups@2022-05-01' = {
-  name:   '${vnetName}/${subnetName}/${nsgName}'
-  parent: resourceId('Microsoft.Network/virtualNetworks', vnetName, 'subnets', subnetName)
+  name: '${vnetName}/${subnetName}/${nsgName}'
   properties: {
     id: nsg.id
   }
