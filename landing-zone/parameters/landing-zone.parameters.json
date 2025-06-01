@@ -61,10 +61,10 @@
       ]
     },
     "vmName": {
-      "value": "landingZone-V-M"
+      "value": "landingZone-VM"
     },
     "diagnosticsWorkspaceId": {
-      "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
+      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
     }
   }
 }
