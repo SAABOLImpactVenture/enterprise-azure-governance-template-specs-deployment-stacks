@@ -2,9 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    // ───────────────────────────────────────────────────────────────────────────
-    // 1a) Subscription & Resource Group
-    // ───────────────────────────────────────────────────────────────────────────
+    
     "location": {
       "value": "eastus"
     },
@@ -12,9 +10,7 @@
       "value": "landingZone-RG"
     },
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // 1b) Network module parameters
-    // ───────────────────────────────────────────────────────────────────────────
+    
     "vnetName": {
       "value": "landingZone-vnet"
     },
@@ -25,9 +21,7 @@
       "value": "10.0.1.0/24"
     },
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // 1c) NSG module parameters
-    // ───────────────────────────────────────────────────────────────────────────
+    
     "nsgName": {
       "value": "landingZone-NSG"
     },
@@ -60,22 +54,16 @@
       ]
     },
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // 1d) JIT module parameter
-    // ───────────────────────────────────────────────────────────────────────────
+   
     "vmName": {
       "value": "landingZone-VM"
     },
 
-    // ───────────────────────────────────────────────────────────────────────────
-    // 1e) Diagnostics module parameter
-    // ───────────────────────────────────────────────────────────────────────────
+    
     "diagnosticsWorkspaceId": {
       "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
     }
 
-    // 1f & 1g) We do NOT supply policyAssignmentSpec or roleAssignmentSpec here,
-    //             because those are loaded from the JSON files under template-specs/
-    //             via loadJsonContent().
+    
   }
 }
