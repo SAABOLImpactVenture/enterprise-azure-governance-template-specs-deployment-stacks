@@ -10,7 +10,7 @@ targetScope = 'resourceGroup'
 param nsgName    string
 param vnetName   string
 param subnetName string
-param rules      array
+param nsgrules      array
 param location   string
 
 // 1) Create (or update) the NSG
