@@ -12,13 +12,37 @@
       "value": "smartcontractvmdns"
     },
     "sshPublicKey": {
-      "value": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD..."  // Replace with your actual SSH key
+      "value": "ssh-rsa b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABFwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAQEAtOT8aYEiSrMBA6kpeLcoG5p99zCm9MZC6PpIkQy0uFNIrrZ1eQSn
+Kwgjk/gFQvwrZfU52PVaHj+3tb1MUAhrhxZHqPyzw64PCGgOH2gL09foflRRVvDk2Q+KMZ
+BeO+6A3Tcy596w5RNyo7rm4jhGI/gQQrdqExiWQgxGpSm/va2qizldqrEFZ+WkyRWzmx39
+KnMMW1EBY/i5auvJ1+lzaRpwIqrCeaiva9ELnQudwNAvuIlkNjRxUdwwbMK8sxqjkCIQGE
+FI/pnXnw2H6yGgoi1EfY4k+ATbOYetNhPQ300UCexh+ZByGqTf7yp1/565wtarz0aF3Dz7
+6RmhUZaPzQAAA9AJffz5CX38+QAAAAdzc2gtcnNhAAABAQC05PxpgSJKswEDqSl4tygbmn
+33MKb0xkLo+kiRDLS4U0iutnV5BKcrCCOT+AVC/Ctl9TnY9VoeP7e1vUxQCGuHFkeo/LPD
+rg8IaA4faAvT1+h+VFFW8OTZD4oxkF477oDdNzLn3rDlE3KjuubiOEYj+BBCt2oTGJZCDE
+alKb+9raqLOV2qsQVn5aTJFbObHf0qcwxbUQFj+Llq68nX6XNpGnAiqsJ5qK9r0QudC53A
+0C+4iWQ2NHFR3DBswryzGqOQIhAYQUj+mdefDYfrIaCiLUR9jiT4BNs5h602E9DfTRQJ7G
+H5kHIapN/vKnX/nrnC1qvPRoXcPPvpGaFRlo/NAAAAAwEAAQAAAQATy/icwkNiue7bO/Tc
+L20+Ah0Vg5dN8/GoJhXxe9q+Tm0Go9S82wfBc5lTLQJEZ60HMjxztDw50b7U7qPOoXFFHi
+jXA1rYCDFAegTLppsewsMAqlEhiuj8oVD+Jh7N/8bODuetDQe+di+mYAK7EK4KazA6YPDE
+qLzu+wFzO1uu0gapXwZ1wfLX91LblOSKHGxM0ey1EuDxq/+W2Nq3w5ifHf8qtqYTbjT4vP
+cyyKohvSQWbBKriplHc686WOUuTYQtqw4CYvS+S6YjhApFLw1yFXOIFk6sQ9gSLQ9uJkja
+3u+za4Ri8MrNe2xPB4QfLcM+z2jQgeseNkSirMgaXb9JAAAAgQCgy0WSfkt3wJm1cv4qGP
+HVj4jJWcxfphVQ9CASVSRwJ5ARtsuG2dltlJfkCMMzqW6cQoqdFLc2mi12KcVlruP8UhE9
+tQtlxhJ7XunqtznGFYuLNGITXXNuSYv5W0AkM4fVoQQ8Zk4vb61MXzyJfC23wEb7QaeluC
+Y4E8kZzPevOgAAAIEA7BhUN3zE1dONrO64qLyd0NwciWgxefoXnm0I+fA1//CwWBAEJxKq
+yok/K+e6TLb+Q8YVDaYLO6Bxj1J6n+domzH0Ucw+WHh+lHwoBW8JKPYhZjeb/QZoe4p5x6
+rf5wIq8KUpFjlA7f0nClrAG1MbfgCbjKQ5DMMO5Y292AKfCokAAACBAMQlQYLYsxmavpwr
+bnKMcYrEooBO96i7N5JWU54wc0CL6Fbin5VAWAgZJ+BgpkczDb2Y6ZrHDCKatUQhPxJ7c0
+RaPn6z6lekJ6+Q7pnrEBoLTBEwJu/XLfHx0EcRVrtlDSFa9ROtx41iuB6lMERk+EqvTJSF
+baA2nzsmS3SsvzolAAAAFWxsY0BjdXJldG9uZmFtaWx5LmNvbQECAwQF"  // Replace with your actual SSH key
     },
     "labVirtualNetworkId": {
-      "value": "/subscriptions/<your-subscription-id>/resourceGroups/Dev_Test_Lab-demosmartcontract-vm-017910/providers/Microsoft.DevTestLab/labs/Dev_Test_Lab/virtualnetworks/DtlDev_Test_Lab"
+      "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/Dev_Test_Lab-demosmartcontract-vm-017910/providers/Microsoft.DevTestLab/labs/Dev_Test_Lab/virtualnetworks/DtlDev_Test_Lab"
     },
     "subscriptionId": {
-      "value": "<your-subscription-id>"
+      "value": "b222b4c3-dfc2-4533-a6bb-2305e55c8eb6"
     },
     "resourceGroupName": {
       "value": "Dev_Test_Lab-demosmartcontract-vm-017910"

@@ -3,7 +3,7 @@
 # Description: Deploy the subscription-scoped landing-zone orchestrator using OIDC.
 #   1) Trigger: On push to main that touches landing-zone.bicep or its parameters.
 #   2) Azure Login via azure/login@v1 (OIDC, no client secret).
-#   3) Run `az deployment sub create …` to execute landing-zone.bicep.
+#   3) Run `az deployment sub create …` to execute the landing-zone.bicep.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Deploy Landing Zone
 
