@@ -13,7 +13,7 @@ param connectivityChildName   string = 'Connectivity-MG'
 param landingZonesChildName   string = 'Landing-Zones-MG'
 param sandboxChildName        string = 'Sandbox-MG'
 
-// Create the root MG: Platform-MG
+// Create the root MG: Platform-MG at tenant scope
 resource rootMG 'Microsoft.Management/managementGroups@2021-04-01' = {
   name: rootName
   properties: {
