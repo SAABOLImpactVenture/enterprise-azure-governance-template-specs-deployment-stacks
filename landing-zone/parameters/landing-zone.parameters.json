@@ -51,7 +51,7 @@
           "priority": 4096,
           "direction": "Inbound",
           "access": "Deny",
-          "protocol": "*",
+          "protocol": "Tcp",
           "sourcePortRange": "*",
           "destinationPortRange": "*",
           "sourceAddressPrefix": "*",
