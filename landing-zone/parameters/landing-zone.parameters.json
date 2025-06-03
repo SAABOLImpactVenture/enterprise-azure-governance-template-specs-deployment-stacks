@@ -21,42 +21,42 @@
       "value": "landingZone-NSG"
     },
     "nsgRules": {
-      "value": [
-        {
-          "name": "AllowSSH",
-          "protocol": "Tcp",
-          "priority": 100,
-          "direction": "Inbound",
-          "access": "Allow",
-          "sourcePortRange": "*",
-          "destinationPortRange": "22",
-          "sourceAddressPrefix": "*",
-          "destinationAddressPrefix": "*",
-          "description": "Allow SSH from anywhere"
-        },
-        {
-          "name": "AllowHTTPS",
-          "priority": 200,
-          "direction": "Inbound",
-          "access": "Allow",
-          "protocol": "Tcp",
-          "sourcePortRange": "*",
-          "destinationPortRange": "443",
-          "sourceAddressPrefix": "*",
-          "destinationAddressPrefix": "*",
-          "description": "Allow HTTPS from anywhere"
-        },
-        {
-          "name": "DenyAllInbound",
-          "priority": 4096,
-          "direction": "Inbound",
-          "access": "Deny",
-          "protocol": "Tcp",
-          "sourcePortRange": "*",
-          "destinationPortRange": "*",
-          "sourceAddressPrefix": "*",
-          "destinationAddressPrefix": "*",
-          "description": "Deny all other inbound traffic"
+    "value": [
+      {
+        "name": "AllowSSH",
+        "protocol": "Tcp",
+        "priority": 100,
+        "direction": "Inbound",
+        "access": "Allow",
+        "sourcePortRange": "*",
+        "destinationPortRange": "22",
+        "sourceAddressPrefix": "*",
+        "destinationAddressPrefix": "*",
+        "description": "Allow SSH from anywhere"
+      },
+      {
+        "name": "AllowHTTPS",
+        "priority": 200,
+        "direction": "Inbound",
+        "access": "Allow",
+        "protocol": "Tcp",
+        "sourcePortRange": "*",
+        "destinationPortRange": "443",
+        "sourceAddressPrefix": "*",
+        "destinationAddressPrefix": "*",
+        "description": "Allow HTTPS from anywhere"
+      },
+      {
+        "name": "DenyAllInbound",
+        "priority": 4096,
+        "direction": "Inbound",
+        "access": "Deny",
+        "protocol": "Tcp",
+        "sourcePortRange": "*",
+        "destinationPortRange": "*",
+        "sourceAddressPrefix": "*",
+        "destinationAddressPrefix": "*",
+        "description": "Deny all other inbound traffic"
         }
       ]
     },
