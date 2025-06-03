@@ -7,15 +7,24 @@
 targetScope = 'resourceGroup'
 
 // Parameters from the orchestrator
-param nsgName    string
-param vnetName   string
+@description('The name of the Network Security Group.')
+param nsgName string
+
+@description('The name of the Virtual Network.')
+param vnetName string
+
+@description('The name of the Subnet.')
 param subnetName string
-param nsgRules   array
-param location   string
+
+@description('Array of security rules. Each rule must include: name, protocol, priority, direction, access, sourcePortRange, destinationPortRange, sourceAddressPrefix, destinationAddressPrefix, description.')
+param nsgRules array
+
+@description('Location for the resources.')
+param location string
 
 // 1) Create (or update) the NSG
 resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
-  name:     nsgName
+  name: nsgName
   location: location
   properties: {
     securityRules: [
@@ -39,10 +48,13 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
 resource subnet 'Microsoft.Network/virtualNetworks/subnets@2022-05-01' = {
   name: '${vnetName}/${subnetName}'
   properties: {
+    addressPrefix: null // Required by the API unless you use `existing`
     networkSecurityGroup: {
       id: nsg.id
     }
   }
+  // Marking as 'existing' so only the NSG association is changed, not the subnet definition.
+  existing: true
 }
 
 output nsgId string = nsg.id
