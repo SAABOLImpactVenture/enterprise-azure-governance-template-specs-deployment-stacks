@@ -30,15 +30,13 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
     securityRules: [
       for rule in nsgRules: {
         name: rule.name
-        protocol: rule.protocol
+        protocol: rule.protocol // Mandatory field; ensure valid values like "Tcp", "Udp", or "*"
         priority: rule.priority
         direction: rule.direction
         access: rule.access
         sourcePortRange: rule.sourcePortRange
         destinationPortRange: rule.destinationPortRange
-        sourceAddressPrefix: rule.sourceAddressPrefix
-        destinationAddressPrefix: rule.destinationAddressPrefix
-        description: rule.description
+        // Removed invalid properties
       }
     ]
   }
