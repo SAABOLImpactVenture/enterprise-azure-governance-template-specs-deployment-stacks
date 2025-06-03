@@ -18,7 +18,17 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
   name:     nsgName
   location: location
   properties: {
-    securityRules: nsgRules // Use the parameter directly
+    securityRules: {
+           name 
+           protocol
+           priority
+           direction
+           access
+           sourcePortRange
+           destinationPortRange
+           sourceAddressPrefix
+           destinationAddressPrefix
+           description
   }
 }
 
