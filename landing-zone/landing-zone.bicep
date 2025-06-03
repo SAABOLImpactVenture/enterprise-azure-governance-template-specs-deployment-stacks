@@ -73,7 +73,7 @@ module nsgModule 'modules/nsg.bicep' = {
     nsgName:    nsgName
     vnetName:   vnetName
     subnetName: 'default'
-    rules:      nsgRules
+    rules:      nsgRules // Pass the correct parameter name
     location:   location
   }
 }
