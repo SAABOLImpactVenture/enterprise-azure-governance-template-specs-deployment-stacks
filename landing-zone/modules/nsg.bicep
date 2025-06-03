@@ -24,19 +24,22 @@ param location string
 
 // 1) Create (or update) the NSG
 resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
-  name: nsgName
+  name:     nsgName
   location: location
   properties: {
     securityRules: [
       for rule in nsgRules: {
         name: rule.name
-        protocol: rule.protocol // Mandatory field; ensure valid values like "Tcp", "Udp", or "*"
+        protocol: rule.protocol // Ensure this property is provided in all rules
         priority: rule.priority
         direction: rule.direction
         access: rule.access
         sourcePortRange: rule.sourcePortRange
         destinationPortRange: rule.destinationPortRange
         // Removed invalid properties
+        // sourceAddressPrefix: rule.sourceAddressPrefix
+        // destinationAddressPrefix: rule.destinationAddressPrefix
+        // description: rule.description
       }
     ]
   }
