@@ -18,8 +18,7 @@ resource rootMG 'Microsoft.Management/managementGroups@2021-04-01' = {
   name: rootName
   properties: {
     displayName: 'Platform Management Group'
-    // No parent: this becomes a new root under the tenant. 
-    details: {}
+    // No parent: this becomes a new root under the tenant.
   }
 }
 
