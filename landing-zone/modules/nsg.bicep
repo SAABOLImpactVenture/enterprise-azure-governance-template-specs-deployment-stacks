@@ -18,29 +18,30 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2022-05-01' = {
   name:     nsgName
   location: location
   properties: {
-    securityRules: {
-           name 
-           protocol
-           priority
-           direction
-           access
-           sourcePortRange
-           destinationPortRange
-           sourceAddressPrefix
-           destinationAddressPrefix
-           description
+    securityRules: [
+      for rule in nsgRules: {
+        name: rule.name
+        protocol: rule.protocol
+        priority: rule.priority
+        direction: rule.direction
+        access: rule.access
+        sourcePortRange: rule.sourcePortRange
+        destinationPortRange: rule.destinationPortRange
+        sourceAddressPrefix: rule.sourceAddressPrefix
+        destinationAddressPrefix: rule.destinationAddressPrefix
+        description: rule.description
+      }
+    ]
   }
 }
 
 // 2) Associate the NSG to the specified subnet of the VNet
-//
-//    Instead of using `parent`, we fully qualify the child resource name
-//    in the format: "<VNetName>/<SubnetName>/<NSGName>".
-//
-resource assoc 'Microsoft.Network/virtualNetworks/subnets/networkSecurityGroups@2022-05-01' = {
-  name: '${vnetName}/${subnetName}/${nsgName}'
+resource subnet 'Microsoft.Network/virtualNetworks/subnets@2022-05-01' = {
+  name: '${vnetName}/${subnetName}'
   properties: {
-    id: nsg.id
+    networkSecurityGroup: {
+      id: nsg.id
+    }
   }
 }
 
