@@ -3,7 +3,7 @@
     Purpose: Create Pay-As-You-Go subscriptions and assign them into Management Groups
 
     Make sure to update $billingAccountName and $billingProfileName to match your own
-    EA/MCA billing account + billing profile.
+    EA/MCA billing account + profile.
 #>
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ $billingProfileName = "6RX4-VIIG-BG7-PGB"
 # 2. Define which subscriptions to create, plus which Management Group each should go under
 # ───────────────────────────────────────────────────────────────────────────────
 
-# Each object needs a Name (the subscription friendly name) and MG (the Management Group name).
+# Each object needs a Name (the subscription’s friendly name) and MG (the Management Group name).
 # You must have already created these Management Groups in your tenant.
 $subsToCreate = @(
     @{ Name = "Management-Sub";       MG = "Management-MG" },
@@ -40,7 +40,7 @@ foreach ($s in $subsToCreate) {
 
     Write-Host "▸ Creating subscription: $($s.Name)" -ForegroundColor Cyan
 
-    # Use the "preview" command az account subscription create (Cloud Shell should have it).
+    # Use the “preview” command az account subscription create (Cloud Shell should have it).
     $creationResult = az account subscription create `
         --subscription-name $($s.Name) `
         --offer-type        "Pay-As-You-Go" `
