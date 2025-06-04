@@ -23,9 +23,14 @@ jobs:
       - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
-          client-id: ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.TARGET_SUBSCRIPTION }}
+            client-id:       ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+            tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+            subscription-id: ${{ secrets.LANDING_A2_SUB_ID }}
+            allow-no-subscriptions: true
+            auth-type:       SERVICE_PRINCIPAL
+            audience:        api://AzureADTokenExchange
+            subject:         repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
+
 
       - name: Deploy DevTest Lab Bicep
         run: |
