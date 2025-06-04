@@ -1,55 +1,71 @@
-# File: .github/workflows/provision-all.yml
-name: Provision All Subscriptions
+<#
+    File: scripts/provision-subscriptions.ps1
+    Purpose: Create Pay-As-You-Go subscriptions and assign them into Management Groups
 
-# Triggering via workflow_dispatch allows you to run it manually from the Actions tab.
-on:
-  workflow_dispatch:
+    Make sure you update $billingAccountName and $billingProfileName to match
+    your own EA/MCA billing account and billing profile.
+#>
 
-env:
-  # These secrets must already be created under your repo's Settings → Secrets → Actions:
-  AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}         # Your Azure AD tenant ID
-  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}    # Client ID of the App Registration (federated SP)
-  MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}       # Any subscription where the SP has permission to create new subs (User Access Admin at "/" scope)
+# ───────────────────────────────────────────────────────────────────────────────
+# 1. Update these variables to match your environment
+# ───────────────────────────────────────────────────────────────────────────────
 
-jobs:
-  provision-all-subs:
-    runs-on: ubuntu-latest
+# This is your Billing Account ID (format: "<billingAccountGUID>:<billingProfileGUID>").
+# You can find it via 'az billing account list' or in the portal under Billing > Billing accounts.
+$billingAccountName = "a80e6778-82d5-5afe-27fc-678a41b69836:1f1915a2-2b3d-44f4-aac0-e08a28c18d27_2018-09-30"
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+# This is your Billing Profile Name (or ID).  You can find it via 'az billing billing-profile list' or in the portal.
+$billingProfileName = "6RX4-VIIG-BG7-PGB"
 
-      - name: Azure Login via OIDC
-        uses: azure/login@v1
-        with:
-          # If you are using an OIDC‐federated App Registration, pass in client-id & tenant-id:
-          client-id:               ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id:               ${{ env.AZURE_TENANT_ID }}
-          subscription-id:         ${{ env.MANAGEMENT_SUB_ID }}
-          allow-no-subscriptions:  true
-          auth-type:               SERVICE_PRINCIPAL
-          audience:                api://AzureADTokenExchange
-          subject:                 repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
+# ───────────────────────────────────────────────────────────────────────────────
+# 2. Define which subscriptions to create, plus which Management Group each should go under
+# ───────────────────────────────────────────────────────────────────────────────
 
-          # ——— OR ———
-          # If you prefer to use a classic (client-secret) Service Principal instead of OIDC,
-          # comment out the above lines and uncomment these:
-          # client-id:             ${{ secrets.CLASSIC_SP_CLIENT_ID }}
-          # client-secret:         ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
-          # tenant-id:             ${{ secrets.AZURE_TENANT_ID }}
-          # subscription-id:       ${{ secrets.MANAGEMENT_SUB_ID }}
+# Each object needs a Name (the subscription friendly name) and MG (the Management Group name).
+# You already must have created these Management Groups under the tenant.
+$subsToCreate = @(
+    @{ Name = "Management-Sub";       MG = "Management-MG" },
+    @{ Name = "Identity-Sub";         MG = "Identity-MG" },
+    @{ Name = "Connectivity-Sub";     MG = "Connectivity-MG" },
+    @{ Name = "LandingZone-P1-Sub";   MG = "Landing-Zones-MG" },
+    @{ Name = "LandingZone-A2-Sub";   MG = "Landing-Zones-MG" },
+    @{ Name = "Sandbox-Sub";          MG = "Sandbox-MG" }
+)
 
-      - name: Run provision-subscriptions.ps1
-        shell: pwsh
-        run: |
-          # Change into the scripts folder where provision-subscriptions.ps1 lives
-          cd ./scripts
+# ───────────────────────────────────────────────────────────────────────────────
+# 3. Loop through each subscription definition, create it, then assign to MG
+# ───────────────────────────────────────────────────────────────────────────────
 
-          # Execute the provisioning script. It will:
-          #   • Create each Pay-As-You-Go subscription under your billing profile/account
-          #   • Wait a few seconds
-          #   • Assign the new subscription into its designated Management Group
-          pwsh ./provision-subscriptions.ps1
+foreach ($s in $subsToCreate) {
 
-      - name: Confirm completion
-        run: echo "✅ All subscriptions should now be created and assigned to their Management Groups."
+    Write-Host "▸ Creating subscription: $($s.Name)" -ForegroundColor Cyan
+
+    # Use the “preview” command az account subscription create (Cloud Shell should have it).
+    $creationResult = az account subscription create `
+        --subscription-name $($s.Name) `
+        --offer-type        "Pay-As-You-Go" `
+        --billing-account   $billingAccountName `
+        --billing-profile   $billingProfileName `
+        --output            json | ConvertFrom-Json
+
+    if (-not $creationResult.id) {
+        Write-Error "X Failed to create subscription '$($s.Name)' – no ID returned from Azure."
+        continue
+    }
+
+    Write-Host "✔ Requested sub ID: $($creationResult.id)" -ForegroundColor Green
+
+    # Short delay so Azure has time to finish provisioning
+    Start-Sleep -Seconds 15
+
+    Write-Host "▸ Assigning '$($s.Name)' to MG '$($s.MG)'" -ForegroundColor Cyan
+
+    az account management-group subscription add `
+        --name $($s.MG) `
+        --subscription $creationResult.id
+
+    Write-Host "✔ Assigned $($s.Name) → $($s.MG)" -ForegroundColor Green
+    Write-Host ""
+}
+
+Write-Host "✅ All done provisioning subscriptions and assigning them into MGs." -ForegroundColor Yellow
