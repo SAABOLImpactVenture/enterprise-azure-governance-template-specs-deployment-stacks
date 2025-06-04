@@ -1,15 +1,16 @@
 # File: .github/workflows/provision-all.yml
+
 name: Provision All Subscriptions
 
-# We only run this manually, so use workflow_dispatch.
+# This workflow does NOT run on push; it only runs when you click "Run workflow" manually
 on:
   workflow_dispatch:
 
 env:
-  # These GitHub Secrets must already exist under Settings → Secrets → Actions:
+  # These secrets must already exist in GitHub → Settings → Secrets → Actions
   AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}         # Your Azure AD Tenant ID
-  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}    # App Registration (federated SP) Client ID
-  MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}       # A subscription where that SP has User Access Admin on "/"
+  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}    # Client ID of your federated App Registration
+  MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}       # Subscription ID where SP has User Access Admin on "/"
 
 jobs:
   provision-all-subs:
@@ -19,24 +20,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Azure Login via OIDC
-        uses: azure/login@v1
+      - name: Azure Login via OIDC (azure/login@v2)
+        uses: azure/login@v2
         with:
-          # Use SERVICE_PRINCIPAL along with a GitHub OIDC token
-          client-id:               ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id:               ${{ env.AZURE_TENANT_ID }}
-          subscription-id:         ${{ env.MANAGEMENT_SUB_ID }}
-          auth-type:               SERVICE_PRINCIPAL
-          use-github-federated-token: true
-          allow-no-subscriptions:  true
+          client-id:       ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id:       ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.MANAGEMENT_SUB_ID }}
+          auth-type:       service_principal
+          oidc:            true
+          allow-no-subscriptions: true
 
-          # ——— OR Classic Client-Secret Mode ——
+          # ——— OR Classic Client-Secret Mode ———
           # If you cannot use OIDC, comment out the above block and uncomment:
-          # client-id:             ${{ secrets.CLASSIC_SP_CLIENT_ID }}
-          # client-secret:         ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
-          # tenant-id:             ${{ secrets.AZURE_TENANT_ID }}
-          # subscription-id:       ${{ secrets.MANAGEMENT_SUB_ID }}
-          # auth-type:             SERVICE_PRINCIPAL
+          # client-id:         ${{ secrets.CLASSIC_SP_CLIENT_ID }}
+          # client-secret:     ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
+          # tenant-id:         ${{ secrets.AZURE_TENANT_ID }}
+          # subscription-id:   ${{ secrets.MANAGEMENT_SUB_ID }}
+          # auth-type:         service_principal
+          # oidc:              false
 
       - name: Run provision-subscriptions.ps1
         shell: pwsh
@@ -45,4 +46,4 @@ jobs:
           pwsh ./provision-subscriptions.ps1
 
       - name: Confirm completion
-        run: echo "✅ All subscriptions have been created and assigned to their Management Groups."
+        run: echo "✅ All subscriptions have been created and assigned into their Management Groups."

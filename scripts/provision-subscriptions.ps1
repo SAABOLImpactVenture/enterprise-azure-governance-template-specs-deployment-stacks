@@ -2,8 +2,8 @@
     File: scripts/provision-subscriptions.ps1
     Purpose: Create Pay-As-You-Go subscriptions and assign them into Management Groups
 
-    Make sure to update $billingAccountName and $billingProfileName to match your own
-    EA/MCA billing account + profile.
+    Make sure to update $billingAccountName and $billingProfileName to match your
+    own EA/MCA billing account + billing profile.
 #>
 
 # ───────────────────────────────────────────────────────────────────────────────
