@@ -62,7 +62,7 @@ resource subnet 'Microsoft.Network/virtualNetworks/subnets@2022-05-01' = {
     // If the subnet already has an addressPrefix, omitting it here
     // means it will not be changed.
   }
-  // The 'existing: true' property is NOT used here for this update pattern.
+  // The 'existing: true' property is NOT used here for this update pattern to prevent Error BCP104
 }
 
 output nsgId string = nsg.id
