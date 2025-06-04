@@ -2,8 +2,7 @@
     File: scripts/provision-subscriptions.ps1
     Purpose: Create Pay-As-You-Go subscriptions and assign them into Management Groups
 
-    Make sure you update $billingAccountName and $billingProfileName to match
-    your own EA/MCA billing account and billing profile.
+    Make sure to update $billingAccountName and $billingProfileName to match your own EA/MCA billing account + profile.
 #>
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -14,7 +13,7 @@
 # You can find it via 'az billing account list' or in the portal under Billing > Billing accounts.
 $billingAccountName = "a80e6778-82d5-5afe-27fc-678a41b69836:1f1915a2-2b3d-44f4-aac0-e08a28c18d27_2018-09-30"
 
-# This is your Billing Profile Name (or ID).  You can find it via 'az billing billing-profile list' or in the portal.
+# This is your Billing Profile Name (or ID). You can find it via 'az billing billing-profile list' or in the portal.
 $billingProfileName = "6RX4-VIIG-BG7-PGB"
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -22,7 +21,7 @@ $billingProfileName = "6RX4-VIIG-BG7-PGB"
 # ───────────────────────────────────────────────────────────────────────────────
 
 # Each object needs a Name (the subscription friendly name) and MG (the Management Group name).
-# You already must have created these Management Groups under the tenant.
+# You must have already created these Management Groups under the tenant.
 $subsToCreate = @(
     @{ Name = "Management-Sub";       MG = "Management-MG" },
     @{ Name = "Identity-Sub";         MG = "Identity-MG" },
