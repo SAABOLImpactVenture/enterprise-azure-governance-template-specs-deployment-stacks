@@ -1,64 +1,34 @@
-# ------------------------------------------------------------
-# .github/workflows/hardhat-ci.yml
-# ------------------------------------------------------------
+# File: .github/workflows/hardhat-ci.yml
 name: Hardhat CI
 
 on:
-  workflow_run:
-    workflows: ["Deploy DevTest Lab"]
-    types:
-      - completed
-
-permissions:
-  contents: read
+  push:
+    paths:
+      - 'smart-contracts/**'
 
 jobs:
-  build-and-test:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  compile-test-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Use Node.js
+      - name: Use Node.js 16.x
         uses: actions/setup-node@v3
         with:
           node-version: '16'
 
       - name: Install dependencies
-        run: npm install
-        working-directory: ./smart-contracts
+        run: npm ci
+        working-directory: smart-contracts
 
-      - name: Compile contracts
-        run: npx hardhat compile
-        working-directory: ./smart-contracts
+      - name: Run Hardhat tests
+        run: npm test
+        working-directory: smart-contracts
 
-      - name: Run tests
-        run: npx hardhat test
-        working-directory: ./smart-contracts
-
-      # ──────────────────────────────────────────────────────────
-      # If you need to deploy contracts to an Azure-hosted node, add:
-      # - name: Azure Login (if using Key Vault for secrets)
-      #   uses: azure/login@v1
-      #   with:
-      #     client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-      #     tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      #
-      # - name: Fetch RPC URL & Private Key from Key Vault
-      #   uses: azure/keyvault-secrets@v4
-      #   with:
-      #     keyvault: ${{ secrets.AZURE_KEYVAULT_NAME }}
-      #     secrets:  |
-      #       RPC_URL
-      #       DEPLOYER_PRIVATE_KEY
-      #
-      # - name: Hardhat Deploy to Azure-hosted Testnet
-      #   env:
-      #     RPC_URL: ${{ steps.keyvault.outputs.RPC_URL }}
-      #     PRIVATE_KEY: ${{ steps.keyvault.outputs.DEPLOYER_PRIVATE_KEY }}
-      #   run: npx hardhat run scripts/deploy.js --network azureTestnet
-      #   working-directory: ./smart-contracts
-      # ──────────────────────────────────────────────────────────
+      - name: Deploy contracts via Azure (optional)
+        if: success()
+        run: |
+          node deploy.js
+        working-directory: smart-contracts

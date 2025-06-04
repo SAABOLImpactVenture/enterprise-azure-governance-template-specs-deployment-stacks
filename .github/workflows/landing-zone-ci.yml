@@ -1,46 +1,42 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # File: .github/workflows/landing-zone-ci.yml
-# Description: Deploy the subscription-scoped landing-zone orchestrator using OIDC.
-#   1) Trigger: On push to main that touches landing-zone.bicep or its parameters.
-#   2) Azure Login via azure/login@v1 (OIDC, no client secret).
-#   3) Run `az deployment sub create …` to execute the landing-zone.bicep.
-#   4) Uses secrets for Azure client ID, tenant ID, and subscription ID
-#   5) Done
-# ─────────────────────────────────────────────────────────────────────────────
 name: Deploy Landing Zone
 
 on:
   push:
-    branches:
-      - main
     paths:
-      - 'landing-zone/landing-zone.bicep'
-      - 'landing-zone/parameters/landing-zone.parameters.json'
-      - '.github/workflows/landing-zone-ci.yml'
+      - 'landing-zone/**'
 
-permissions:
-  id-token: write   # for OIDC login
-  contents:  read   # to checkout code
+env:
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
 
 jobs:
   deploy-landing-zone:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        subscriptionId: [
+          ${{ secrets.MANAGEMENT_SUB_ID }},
+          ${{ secrets.IDENTITY_SUB_ID }},
+          ${{ secrets.CONNECTIVITY_SUB_ID }},
+          ${{ secrets.LANDING_P1_SUB_ID }},
+          ${{ secrets.LANDING_A2_SUB_ID }},
+          ${{ secrets.SANDBOX_SUB_ID }}
+        ]
+
     steps:
-      # 1) Checkout code
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      # 2) Azure OIDC login
-      - name: Azure Login using OIDC
+      - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ matrix.subscriptionId }}
 
-      # 3) Subscription-scope deploy
-      - name: Deploy landing-zone.bicep (Subscription Scope)
+      - name: Deploy landing-zone.bicep at Subscription Scope
         run: |
           az deployment sub create \
             --location eastus \
