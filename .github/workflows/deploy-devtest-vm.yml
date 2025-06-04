@@ -1,25 +1,33 @@
-# File: .github/workflows/deploy-devtest-vm.yml
-name: Deploy DevTest Lab VM
+# File: .github/workflows/landing-zone-ci.yml
+name: Deploy Landing Zone
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'devtest-lab/**'
+      - 'landing-zone/**'
 
 env:
   AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
-  TARGET_SUBSCRIPTION:  ${{ secrets.LANDING_A2_SUB_ID }}
-  TARGET_RG:            "rg-devtest-lab"
 
 jobs:
-  deploy-devtest:
+  deploy-landing-zone:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        subscriptionId:
+          - ${{ secrets.MANAGEMENT_SUB_ID }}
+          - ${{ secrets.IDENTITY_SUB_ID }}
+          - ${{ secrets.CONNECTIVITY_SUB_ID }}
+          - ${{ secrets.LANDING_P1_SUB_ID }}
+          - ${{ secrets.LANDING_A2_SUB_ID }}
+          - ${{ secrets.SANDBOX_SUB_ID }}
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Azure Login via OIDC
@@ -27,24 +35,15 @@ jobs:
         with:
           client-id:                ${{ env.AZURE_OIDC_CLIENT_ID }}
           tenant-id:                ${{ env.AZURE_TENANT_ID }}
-          subscription-id:          ${{ env.TARGET_SUBSCRIPTION }}
+          subscription-id:          ${{ matrix.subscriptionId }}
           allow-no-subscriptions:   true
           auth-type:                SERVICE_PRINCIPAL
           audience:                 api://AzureADTokenExchange
           subject:                  repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
 
-      - name: Deploy DevTest Lab Bicep
+      - name: Deploy landing-zone.bicep
         run: |
-          az deployment group create \
-            --resource-group ${{ env.TARGET_RG }} \
-            --template-file devtest-lab/devtest-vm.bicep \
-            --parameters devtest-lab/parameters/devtest-vm.parameters.json
-
-      - name: Configure Just-In-Time Access
-        run: pwsh ./devtest-lab/scripts/enable-jit.ps1
-
-      - name: Configure NSG Hardening
-        run: pwsh ./devtest-lab/scripts/configure-nsg.ps1
-
-      - name: Enable Diagnostics
-        run: pwsh ./devtest-lab/scripts/enable-diagnostics.ps1
+          az deployment sub create \
+            --location eastus \
+            --template-file landing-zone/landing-zone.bicep \
+            --parameters landing-zone/parameters/landing-zone.parameters.json
