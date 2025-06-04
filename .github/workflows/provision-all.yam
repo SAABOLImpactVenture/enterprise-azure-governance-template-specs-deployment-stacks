@@ -1,0 +1,25 @@
+jobs:
+  deploy-mg:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write      # for Azure OIDC login
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v1
+        with:
+          tenant-id: ${{ secrets.AZ_TENANT_ID }}
+          subscription-id: ${{ secrets.AZ_SUBSCRIPTION_ID }}  # any existing sub where you have MG perms
+          allow-no-subscriptions: true
+
+      - name: Deploy Management Groups (Bicep at Tenant scope)
+        run: |
+          cd management-groups
+          az deployment tenant create \
+            --name 'DeployPlatformMGs' \
+            --template-file ./management-groups.bicep \
+            --location eastus \
+            --only-show-errors
