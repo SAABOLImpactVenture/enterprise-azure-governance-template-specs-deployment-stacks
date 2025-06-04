@@ -3,19 +3,21 @@ name: Deploy DevTest Lab VM
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'devtest-lab/**'
 
 env:
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
-  # This workflow targets only the A2 “Landing-Zones” subscription:
-  TARGET_SUBSCRIPTION: ${{ secrets.LANDING_A2_SUB_ID }}
-  TARGET_RG: "rg-devtest-lab"   # Change if your RG has a different name
+  TARGET_SUBSCRIPTION:  ${{ secrets.LANDING_A2_SUB_ID }}
+  TARGET_RG:            "rg-devtest-lab"
 
 jobs:
   deploy-devtest:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -23,14 +25,13 @@ jobs:
       - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
-            client-id:       ${{ secrets.AZURE_OIDC_CLIENT_ID }}
-            tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-            subscription-id: ${{ secrets.LANDING_A2_SUB_ID }}
-            allow-no-subscriptions: true
-            auth-type:       SERVICE_PRINCIPAL
-            audience:        api://AzureADTokenExchange
-            subject:         repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
-
+          client-id:                ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id:                ${{ env.AZURE_TENANT_ID }}
+          subscription-id:          ${{ env.TARGET_SUBSCRIPTION }}
+          allow-no-subscriptions:   true
+          auth-type:                SERVICE_PRINCIPAL
+          audience:                 api://AzureADTokenExchange
+          subject:                  repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
 
       - name: Deploy DevTest Lab Bicep
         run: |
@@ -40,13 +41,10 @@ jobs:
             --parameters devtest-lab/parameters/devtest-vm.parameters.json
 
       - name: Configure Just-In-Time Access
-        run: |
-          pwsh ./devtest-lab/scripts/enable-jit.ps1
+        run: pwsh ./devtest-lab/scripts/enable-jit.ps1
 
       - name: Configure NSG Hardening
-        run: |
-          pwsh ./devtest-lab/scripts/configure-nsg.ps1
+        run: pwsh ./devtest-lab/scripts/configure-nsg.ps1
 
       - name: Enable Diagnostics
-        run: |
-          pwsh ./devtest-lab/scripts/enable-diagnostics.ps1
+        run: pwsh ./devtest-lab/scripts/enable-diagnostics.ps1
