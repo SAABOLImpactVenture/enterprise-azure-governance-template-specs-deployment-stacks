@@ -3,11 +3,13 @@ name: Deploy Landing Zone
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'landing-zone/**'
 
 env:
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
 
 jobs:
@@ -16,27 +18,30 @@ jobs:
 
     strategy:
       matrix:
-        subscriptionId: [
-          ${{ secrets.MANAGEMENT_SUB_ID }},
-          ${{ secrets.IDENTITY_SUB_ID }},
-          ${{ secrets.CONNECTIVITY_SUB_ID }},
-          ${{ secrets.LANDING_P1_SUB_ID }},
-          ${{ secrets.LANDING_A2_SUB_ID }},
-          ${{ secrets.SANDBOX_SUB_ID }}
-        ]
+        subscriptionId:
+          - ${{ secrets.MANAGEMENT_SUB_ID }}
+          - ${{ secrets.IDENTITY_SUB_ID }}
+          - ${{ secrets.CONNECTIVITY_SUB_ID }}
+          - ${{ secrets.LANDING_P1_SUB_ID }}
+          - ${{ secrets.LANDING_A2_SUB_ID }}
+          - ${{ secrets.SANDBOX_SUB_ID }}
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
-          client-id: ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ matrix.subscriptionId }}
+          client-id:              ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id:              ${{ env.AZURE_TENANT_ID }}
+          subscription-id:        ${{ matrix.subscriptionId }}
+          allow-no-subscriptions: true
+          auth-type:              SERVICE_PRINCIPAL
+          audience:               api://AzureADTokenExchange
+          subject:                repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
 
-      - name: Deploy landing-zone.bicep at Subscription Scope
+      - name: Deploy landing-zone.bicep
         run: |
           az deployment sub create \
             --location eastus \

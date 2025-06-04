@@ -1,30 +1,23 @@
-# File: .github/workflows/landing-zone-ci.yml
-name: Deploy Landing Zone
+# File: .github/workflows/deploy-devtest-vm.yml
+name: Deploy DevTest Lab VM
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'landing-zone/**'
+      - 'devtest-lab/**'
 
 env:
-  AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+  # These three secrets must already exist in GitHub → Settings → Secrets → Actions
+  AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}         # Your Azure AD Tenant ID
+  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}    # Client ID of your App Registration (federated SP)
+  TARGET_SUBSCRIPTION:  ${{ secrets.LANDING_A2_SUB_ID }}       # Subscription ID where DevTest Lab lives
+  TARGET_RG:            "rg-devtest-lab"                       # Name of the Resource Group for DevTest Lab
 
 jobs:
-  deploy-landing-zone:
+  deploy-devtest:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        subscriptionId:
-          - ${{ secrets.MANAGEMENT_SUB_ID }}
-          - ${{ secrets.IDENTITY_SUB_ID }}
-          - ${{ secrets.CONNECTIVITY_SUB_ID }}
-          - ${{ secrets.LANDING_P1_SUB_ID }}
-          - ${{ secrets.LANDING_A2_SUB_ID }}
-          - ${{ secrets.SANDBOX_SUB_ID }}
 
     steps:
       - name: Checkout repository
@@ -33,17 +26,27 @@ jobs:
       - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
-          client-id:              ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id:              ${{ env.AZURE_TENANT_ID }}
-          subscription-id:        ${{ matrix.subscriptionId }}
-          allow-no-subscriptions: true
-          auth-type:              SERVICE_PRINCIPAL
-          audience:               api://AzureADTokenExchange
-          subject:                repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
+          # These fields must exactly match your App Registration & Azure configuration:
+          client-id:                ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id:                ${{ env.AZURE_TENANT_ID }}
+          subscription-id:          ${{ env.TARGET_SUBSCRIPTION }}
+          allow-no-subscriptions:   true
+          auth-type:                SERVICE_PRINCIPAL
+          audience:                 api://AzureADTokenExchange
+          subject:                  repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
 
-      - name: Deploy landing-zone.bicep
+      - name: Deploy DevTest Lab Bicep
         run: |
-          az deployment sub create \
-            --location eastus \
-            --template-file landing-zone/landing-zone.bicep \
-            --parameters landing-zone/parameters/landing-zone.parameters.json
+          az deployment group create \
+            --resource-group ${{ env.TARGET_RG }} \
+            --template-file devtest-lab/devtest-vm.bicep \
+            --parameters devtest-lab/parameters/devtest-vm.parameters.json
+
+      - name: Configure Just-In-Time Access
+        run: pwsh ./devtest-lab/scripts/enable-jit.ps1
+
+      - name: Configure NSG Hardening
+        run: pwsh ./devtest-lab/scripts/configure-nsg.ps1
+
+      - name: Enable Diagnostics
+        run: pwsh ./devtest-lab/scripts/enable-diagnostics.ps1
