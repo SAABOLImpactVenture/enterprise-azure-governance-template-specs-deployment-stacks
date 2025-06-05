@@ -1,5 +1,5 @@
 # Azure Subscription Provisioning Script for Microsoft Customer Agreement
-# Last Updated: 2025-06-05 21:26:33 UTC
+# Last Updated: 2025-06-05 21:35:47 UTC
 # Current User: GEP-V
 
 # Configuration - Using the billing information provided
@@ -14,22 +14,37 @@ function Get-ExistingSubscription {
     )
     
     Write-Host "▸ Checking if subscription '$subscriptionName' already exists..."
-    $existingSub = az account list --query "[?name=='$subscriptionName'].id" -o tsv 2>&1
+    
+    # Use --all flag to show all subscriptions regardless of state
+    # Redirect stderr to null to suppress warnings
+    # Use --query to get just the ID without any other text
+    $existingSub = az account list --all --query "[?name=='$subscriptionName'].id" -o tsv 2>$null
     
     if ($LASTEXITCODE -eq 0 -and $existingSub) {
-        Write-Host "✅ Found existing subscription '$subscriptionName' with ID: $existingSub"
-        return $existingSub
+        # Clean the output - ensure we only have the GUID
+        $existingSub = $existingSub.Trim()
+        
+        # Validate that it looks like a GUID
+        if ($existingSub -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+            Write-Host "✅ Found existing subscription '$subscriptionName' with ID: $existingSub"
+            return $existingSub
+        }
+        else {
+            Write-Host "⚠️ Found subscription '$subscriptionName' but ID format is invalid: $existingSub"
+            return $null
+        }
     }
     
+    Write-Host "  Subscription '$subscriptionName' not found."
     return $null
 }
 
 function Create-SubscriptionAlias {
     param (
         [string]$subscriptionName,
-        [int]$retryCount = 120,  # Doubled to 10 minutes
+        [int]$retryCount = 120,
         [int]$sleepSeconds = 5,
-        [int]$initialBackoffSeconds = 60  # Initial backoff for rate limiting
+        [int]$initialBackoffSeconds = 60
     )
     
     # First check if subscription already exists
@@ -49,7 +64,7 @@ function Create-SubscriptionAlias {
     $success = $false
     $attempt = 1
     
-    while (-not $success -and $attempt -le 5) { # Max 5 attempts with exponential backoff
+    while (-not $success -and $attempt -le 5) {
         Write-Host "  Creation attempt $attempt with $backoffSeconds seconds backoff if rate limited..."
         
         $result = az account alias create `
@@ -165,7 +180,24 @@ function Assign-SubscriptionToManagementGroup {
         return
     }
     
+    # Ensure subscriptionId is properly formatted before assignment
+    if (-not ($subscriptionId -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')) {
+        Write-Error "X Invalid subscription ID format: '$subscriptionId'. Cannot assign to management group."
+        return
+    }
+    
     Write-Host "▸ Assigning subscription $subscriptionId to management group: $managementGroupId"
+    
+    # First switch to the subscription context to ensure it's accessible
+    Write-Host "  Switching to subscription context..."
+    $switchResult = az account set --subscription $subscriptionId 2>&1
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "X Failed to switch to subscription context: $switchResult"
+        return
+    }
+    
+    # Now assign to management group
     $result = az account management-group subscription add --name $managementGroupId --subscription $subscriptionId 2>&1
     
     if ($LASTEXITCODE -ne 0) {
@@ -200,6 +232,11 @@ Start-Sleep -Seconds 60
 
 # Assign to management groups
 Write-Host "Starting management group assignment process..." -ForegroundColor Cyan
+
+# Debug - Show all available subscriptions
+Write-Host "Available subscriptions:" -ForegroundColor Cyan
+az account list --all --output table
+
 if ($managementSubId) { Assign-SubscriptionToManagementGroup -subscriptionId $managementSubId -managementGroupId "Management" }
 if ($identitySubId) { Assign-SubscriptionToManagementGroup -subscriptionId $identitySubId -managementGroupId "Identity" }
 if ($connectivitySubId) { Assign-SubscriptionToManagementGroup -subscriptionId $connectivitySubId -managementGroupId "Connectivity" }
@@ -211,6 +248,16 @@ if ($sandboxSubId) { Assign-SubscriptionToManagementGroup -subscriptionId $sandb
 $createdSubs = @($managementSubId, $identitySubId, $connectivitySubId, $landingZoneP1SubId, $landingZoneA2SubId, $sandboxSubId) | Where-Object { $_ }
 if ($createdSubs.Count -gt 0) {
     Write-Host "✅ Successfully created/verified $($createdSubs.Count) subscriptions." -ForegroundColor Green
+    
+    # List all subscription IDs for reference
+    Write-Host "Subscription IDs:" -ForegroundColor Green
+    Write-Host "Management-Sub: $managementSubId"
+    Write-Host "Identity-Sub: $identitySubId"
+    Write-Host "Connectivity-Sub: $connectivitySubId"
+    Write-Host "LandingZone-P1-Sub: $landingZoneP1SubId"
+    Write-Host "LandingZone-A2-Sub: $landingZoneA2SubId"
+    Write-Host "Sandbox-Sub: $sandboxSubId"
+    
     Write-Host "✅ All done! Subscriptions created & assigned into Management Groups." -ForegroundColor Green
 } else {
     Write-Error "❌ Failed to create any subscriptions."
