@@ -1,20 +1,20 @@
 # File: .github/workflows/provision-all.yml
 name: Provision All Subscriptions
 
-# This workflow only runs when you manually click "Run workflow"
+# Only run when someone clicks “Run workflow” manually
 on:
   workflow_dispatch:
 
-# In order to fetch an OIDC token, the job needs id-token permissions.
+# We need id-token permissions so that azure/login@v2 can fetch the OIDC JWT
 permissions:
   id-token: write
   contents: read
 
 env:
-  # These must exist as Repository‐scoped secrets under Settings → Secrets → Actions
-  AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}         
-  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}    
-  MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}       
+  # These three secrets must exist under Settings → Secrets → Actions
+  AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+  MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}
 
 jobs:
   provision-all-subs:
@@ -27,21 +27,28 @@ jobs:
       - name: Azure Login via OIDC (azure/login@v2)
         uses: azure/login@v2
         with:
-          client-id:               ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id:               ${{ env.AZURE_TENANT_ID }}
-          subscription-id:         ${{ env.MANAGEMENT_SUB_ID }}
-          auth-type:               service_principal
-          allow-no-subscriptions:  true
-          audience:                api://AzureADTokenExchange
+          client-id:                  ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id:                  ${{ env.AZURE_TENANT_ID }}
+          subscription-id:            ${{ env.MANAGEMENT_SUB_ID }}
+          auth-type:                  service_principal
+          use-github-federated-token: true
+          allow-no-subscriptions:     true
+          audience:                   api://AzureADTokenExchange
 
-          # ——— OR Classic Client-Secret Mode ———
-          # If for some reason you cannot use GitHub‐OIDC, comment out the above block and uncomment below:
+          # ——— Or, if for some reason you need classic SP credentials instead of OIDC, uncomment:
           # client-id:             ${{ secrets.CLASSIC_SP_CLIENT_ID }}
           # client-secret:         ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
           # tenant-id:             ${{ secrets.AZURE_TENANT_ID }}
           # subscription-id:       ${{ secrets.MANAGEMENT_SUB_ID }}
           # auth-type:             service_principal
           # allow-no-subscriptions: true
+
+      - name: Install “subscription” CLI extension
+        run: |
+          az extension add --name subscription
+        # If that fails, you can also enable dynamic install:
+        # run: |
+        #   az config set extension.use_dynamic_install=yes_without_prompt
 
       - name: Run provision-subscriptions.ps1
         shell: pwsh

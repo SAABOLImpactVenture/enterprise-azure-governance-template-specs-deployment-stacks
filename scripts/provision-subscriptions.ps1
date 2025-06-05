@@ -2,8 +2,8 @@
     File: scripts/provision-subscriptions.ps1
     Purpose: Create Pay-As-You-Go subscriptions and assign them into Management Groups
 
-    Make sure to update $billingAccountName and $billingProfileName to match your
-    own EA/MCA billing account + billing profile.
+    Make sure to update $billingAccountName and $billingProfileName to match your own
+    EA/MCA billing account + profile.
 #>
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ foreach ($s in $subsToCreate) {
 
     Write-Host "▸ Creating subscription: $($s.Name)" -ForegroundColor Cyan
 
-    # Use the “preview” command az account subscription create (Cloud Shell should have it).
+    # This is the preview command that comes from the “subscription” extension
     $creationResult = az account subscription create `
         --subscription-name $($s.Name) `
         --offer-type        "Pay-As-You-Go" `
