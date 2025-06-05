@@ -42,12 +42,14 @@ foreach ($s in $subsToCreate) {
     Write-Host "▸ Creating subscription: $($s.Name)" -ForegroundColor Cyan
 
     # This command comes from the “account” extension (in preview)
-    $creationResult = az billing subscription create `
+    $jsonOutput = az billing subscription create `
         --billing-account-name $billingAccountName `
         --billing-profile-name $billingProfileName `
-        --display-name $($s.Name) ` `
-        --sku-id "0001" #Pay-As-You_go SKU ID
-        --output json | ConvertFrom-Json
+        --display-name $($s.Name) ` 
+        --sku-id "0001" `
+        --output json 
+
+    $creationResult = $jsonOutput | ConvertFrom-Json
 
     if (-not $creationResult.id) {
         Write-Error "X Failed to create subscription '$($s.Name)' – no ID returned."
