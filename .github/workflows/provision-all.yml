@@ -4,7 +4,7 @@ name: Provision All Subscriptions
 on:
   workflow_dispatch:
 
-# Grant permission to mint an ID token for OIDC
+# Grant id-token permission so azure/login@v2 can fetch OIDC
 permissions:
   id-token: write
   contents: read
@@ -19,38 +19,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout the repo so that /scripts/provision-subscriptions.ps1 is available
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2) Log in to Azure via OIDC
       - name: Azure Login via OIDC (azure/login@v2)
         uses: azure/login@v2
         with:
-          client-id:       ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id:       ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.MANAGEMENT_SUB_ID }}
-          auth-type:       service_principal
-          allow-no-subscriptions: true
-          audience:        api://AzureADTokenExchange
+          client-id:               ${{ env.AZURE_OIDC_CLIENT_ID }}
+          tenant-id:               ${{ env.AZURE_TENANT_ID }}
+          subscription-id:         ${{ env.MANAGEMENT_SUB_ID }}
+          auth-type:               service_principal
+          allow-no-subscriptions:  true
+          audience:                api://AzureADTokenExchange
 
-      # 3) Enable dynamic extension install so that 'az billing' commands succeed
       - name: Enable dynamic extension install
-        run: |
-          az config set extension.use_dynamic_install=yes_without_prompt
+        run: az config set extension.use_dynamic_install=yes_without_prompt
 
-      # 4) Still explicitly install the 'account' extension (preview) for 
-      #    `az account management-group subscription add ...`
       - name: Install “account” CLI extension (preview)
         run: az extension add --name account --allow-preview
 
-      # 5) Run the provisioning script
       - name: Run provisioning script
         shell: pwsh
         run: |
           cd ./scripts
           pwsh ./provision-subscriptions.ps1
 
-      # 6) Confirm completion
       - name: Confirm completion
         run: echo "✅ Finished creating and assigning subscriptions."
