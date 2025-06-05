@@ -1,17 +1,17 @@
 # File: .github/workflows/provision-all.yml
 name: Provision All Subscriptions
 
-# Only run when someone clicks “Run workflow” manually
+# Only run this when manually invoked
 on:
   workflow_dispatch:
 
-# We need id-token permissions so that azure/login@v2 can fetch the OIDC JWT
+# We need id-token permissions to mint a GitHub‐OIDC JWT for azure/login@v2
 permissions:
   id-token: write
   contents: read
 
 env:
-  # These three secrets must exist under Settings → Secrets → Actions
+  # These secrets must all be defined under Settings → Secrets → Actions
   AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
   MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}
@@ -35,7 +35,7 @@ jobs:
           allow-no-subscriptions:     true
           audience:                   api://AzureADTokenExchange
 
-          # ——— Or, if for some reason you need classic SP credentials instead of OIDC, uncomment:
+          # ——— Or, if you must use classic SP credentials instead of OIDC, comment out above and uncomment below:
           # client-id:             ${{ secrets.CLASSIC_SP_CLIENT_ID }}
           # client-secret:         ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
           # tenant-id:             ${{ secrets.AZURE_TENANT_ID }}
@@ -43,18 +43,17 @@ jobs:
           # auth-type:             service_principal
           # allow-no-subscriptions: true
 
-      - name: Install “subscription” CLI extension
+      - name: Install “account” CLI extension
         run: |
-          az extension add --name subscription
-        # If that fails, you can also enable dynamic install:
-        # run: |
-        #   az config set extension.use_dynamic_install=yes_without_prompt
+          az extension add --name account
+        # If you ever want the very latest preview version instead, you can add:
+        # az extension add --name account --allow-preview
 
-      - name: Run provision-subscriptions.ps1
+      - name: Run provisioning script
         shell: pwsh
         run: |
           cd ./scripts
           pwsh ./provision-subscriptions.ps1
 
       - name: Confirm completion
-        run: echo "✅ All subscriptions have been created and assigned into their Management Groups."
+        run: echo "✅ Finished creating and assigning subscriptions."
