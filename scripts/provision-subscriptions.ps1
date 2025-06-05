@@ -43,11 +43,11 @@ foreach ($s in $subsToCreate) {
 
     # This command comes from the “account” extension (in preview)
     $cliParams = @(
-        "billing", "subscription", "create",
-        "--billing-account-name", $billingAccountName,
-        "--billing-profile-name", $billingProfileName,
+        "account", "alias", "create",
+        "--name", $(s.Name),
+        "--billing-scope", $billingscope,
         "--display-name", $($s.Name),
-        "--sku-id", "0001",
+        "--workload", "Production",
         "--output", "json"
     ) 
     $jsonOutput = az @cliParams
