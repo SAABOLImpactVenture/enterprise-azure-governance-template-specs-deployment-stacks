@@ -42,13 +42,15 @@ foreach ($s in $subsToCreate) {
     Write-Host "▸ Creating subscription: $($s.Name)" -ForegroundColor Cyan
 
     # This command comes from the “account” extension (in preview)
-    $jsonOutput = az billing subscription create `
-        --billing-account-name $billingAccountName `
-        --billing-profile-name $billingProfileName `
-        --display-name $($s.Name) ` 
-        --sku-id "0001" `
-        --output json 
-
+    $cliParams = @(
+        "billing", "subscription", "create",
+        "--billing-account-name", $billingAccountName,
+        "--billing-profile-name", $billingProfileName,
+        "--display-name", $($s.Name),
+        "--sku-id", "0001",
+        "--output", "json"
+    ) 
+    $jsonOutput = az @cliParams
     $creationResult = $jsonOutput | ConvertFrom-Json
 
     if (-not $creationResult.id) {
