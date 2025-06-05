@@ -44,7 +44,7 @@ foreach ($s in $subsToCreate) {
     # This command comes from the “account” extension (in preview)
     $cliParams = @(
         "account", "alias", "create",
-        "--name", $(s.Name),
+        "--name", $($s.Name),
         "--billing-scope", $billingscope,
         "--display-name", $($s.Name),
         "--workload", "Production",
