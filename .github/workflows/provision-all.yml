@@ -1,17 +1,15 @@
 # File: .github/workflows/provision-all.yml
 name: Provision All Subscriptions
 
-# Trigger manually only.
 on:
   workflow_dispatch:
 
-# In order for azure/login@v2 to mint a GitHub OIDC token, we need `id-token: write`.
+# Allow OIDC login
 permissions:
   id-token: write
   contents: read
 
 env:
-  # These three secrets must be defined in your GitHub repo’s Settings → Secrets → Actions:
   AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
   MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}
@@ -21,12 +19,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Check out your code so that `/scripts/provision‐subscriptions.ps1` is available:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2) Sign in to Azure via OIDC using azure/login@v2.  No client‐secret is supplied,
-      #    so the action will automatically fetch an OIDC JWT from GitHub and exchange it.
       - name: Azure Login via OIDC (azure/login@v2)
         uses: azure/login@v2
         with:
@@ -37,34 +32,19 @@ jobs:
           allow-no-subscriptions: true
           audience:        api://AzureADTokenExchange
 
-          # — If you cannot use OIDC, comment out the above block and instead use classic SP creds:
-          # client-id:             ${{ secrets.CLASSIC_SP_CLIENT_ID }}
-          # client-secret:         ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
-          # tenant-id:             ${{ secrets.AZURE_TENANT_ID }}
-          # subscription-id:       ${{ secrets.MANAGEMENT_SUB_ID }}
-          # auth-type:             service_principal
-          # allow-no-subscriptions: true
-
-      # 3) Install the “account” extension (preview) so that `az account management-group` works:
       - name: Install “account” CLI extension (preview)
         run: |
           az extension add --name account --allow-preview
 
-      # 4) (Optional) Install the “billing” extension explicitly if not already on the runner.
-      #    On most GitHub‐hosted images, “az billing” is built in, but in case you get “command not found”,
-      #    uncomment the next lines:
-      #
-      #- name: Install “billing” CLI extension
-      #  run: |
-      #    az extension add --name billing
+      - name: Install “billing” CLI extension (preview)
+        run: |
+          az extension add --name billing --allow-preview
 
-      # 5) Run our PowerShell provisioning script
       - name: Run provisioning script
         shell: pwsh
         run: |
           cd ./scripts
           pwsh ./provision-subscriptions.ps1
 
-      # 6) Finally, print a success message.
       - name: Confirm completion
         run: echo "✅ Finished creating and assigning subscriptions."
