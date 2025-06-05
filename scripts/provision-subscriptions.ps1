@@ -3,8 +3,9 @@
     Purpose: Create Pay-As-You-Go subscriptions and assign them into Management Groups
 
     IMPORTANT:
-    • Make sure $billingAccountName and $billingProfileName exactly match your EA/MCA billing details.
-    • AAD/SP used to run this must have “Billing Reader” on the billing account + “User Access Administrator” on the tenant root (/) to assign to MGs.
+    • Make sure $billingAccountName and $billingProfileName match your own billing account/profile.
+    • The SP that’s logging in needs Billing Reader on the billing account and
+      “User Access Administrator” on the tenant root (/) so it can assign subscriptions into MGs.
 #>
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -14,14 +15,15 @@
 # Your Billing Account ID (format: "<billingAccountGUID>:<billingProfileGUID>")
 $billingAccountName = "a80e6778-82d5-5afe-27fc-678a41b69836:1f1915a2-2b3d-44f4-aac0-e08a28c18d27_2018-09-30"
 
-# Your Billing Profile Name or ID (found via 'az billing billing-profile list')
+# Your Billing Profile Name (or ID); you can get it via `az billing billing-profile list` in your tenant
 $billingProfileName = "6RX4-VIIG-BG7-PGB"
 
 # ───────────────────────────────────────────────────────────────────────────────
 # 2. Define which subscriptions to create & which Management Group to place them under
 # ───────────────────────────────────────────────────────────────────────────────
 
-# You must have already created these MGs in your tenant.
+# Each object must have a Name (friendly subscription name) and MG (existing MG name).
+# You must have already created these management groups in Azure.
 $subsToCreate = @(
     @{ Name = "Management-Sub";     MG = "Management-MG" },
     @{ Name = "Identity-Sub";       MG = "Identity-MG" },
@@ -39,7 +41,7 @@ foreach ($s in $subsToCreate) {
 
     Write-Host "▸ Creating subscription: $($s.Name)" -ForegroundColor Cyan
 
-    # The “account” extension provides this create command.
+    # This command comes from the “account” extension (in preview)
     $creationResult = az account subscription create `
         --subscription-name $($s.Name) `
         --offer-type        "Pay-As-You-Go" `
@@ -54,7 +56,7 @@ foreach ($s in $subsToCreate) {
 
     Write-Host "✔ Requested sub ID: $($creationResult.id)" -ForegroundColor Green
 
-    # Give Azure a few seconds to finish provisioning
+    # Give Azure a moment to finish provisioning
     Start-Sleep -Seconds 15
 
     Write-Host "▸ Assigning '$($s.Name)' to MG '$($s.MG)'" -ForegroundColor Cyan

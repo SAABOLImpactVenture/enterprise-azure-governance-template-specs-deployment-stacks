@@ -1,17 +1,17 @@
 # File: .github/workflows/provision-all.yml
 name: Provision All Subscriptions
 
-# Only run this when manually invoked
+# Only run when someone manually invokes this workflow
 on:
   workflow_dispatch:
 
-# We need id-token permissions to mint a GitHub‐OIDC JWT for azure/login@v2
+# We must explicitly enable id-token so that azure/login@v2 can fetch a GitHub-OIDC token.
 permissions:
   id-token: write
   contents: read
 
 env:
-  # These secrets must all be defined under Settings → Secrets → Actions
+  # These three secrets must already exist under “Settings → Secrets and Variables → Actions”
   AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
   MANAGEMENT_SUB_ID:    ${{ secrets.MANAGEMENT_SUB_ID }}
@@ -35,7 +35,8 @@ jobs:
           allow-no-subscriptions:     true
           audience:                   api://AzureADTokenExchange
 
-          # ——— Or, if you must use classic SP credentials instead of OIDC, comment out above and uncomment below:
+          # ——— OR Classic SP Mode ———
+          # If OIDC is not possible, uncomment this block and comment out the above:
           # client-id:             ${{ secrets.CLASSIC_SP_CLIENT_ID }}
           # client-secret:         ${{ secrets.CLASSIC_SP_CLIENT_SECRET }}
           # tenant-id:             ${{ secrets.AZURE_TENANT_ID }}
@@ -43,11 +44,11 @@ jobs:
           # auth-type:             service_principal
           # allow-no-subscriptions: true
 
-      - name: Install “account” CLI extension
+      - name: Install “account” CLI extension (preview)
         run: |
-          az extension add --name account
-        # If you ever want the very latest preview version instead, you can add:
-        # az extension add --name account --allow-preview
+          az extension add --name account --allow-preview
+        # If you only want the GA version, omit “--allow-preview”:
+        # az extension add --name account
 
       - name: Run provisioning script
         shell: pwsh
