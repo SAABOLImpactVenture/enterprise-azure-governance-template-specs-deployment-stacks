@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Script to install Azure CLI and assign subscriptions to management groups
-# Created: 2025-06-06 14:54:09
-# Author: GEP-V
+# Current Date/Time: 2025-06-06 15:12:14
+# User: GEP-V
 # Environment: GitHub Codespace
 
 # Colors for better output
@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 echo -e "${YELLOW}Azure Subscription to Management Group Assignment Tool${NC}"
 echo -e "${YELLOW}=================================================${NC}"
-echo -e "${CYAN}Current Date/Time: 2025-06-06 14:54:09${NC}"
+echo -e "${CYAN}Current Date/Time: 2025-06-06 15:12:14${NC}"
 echo -e "${CYAN}User: GEP-V${NC}"
 echo -e "${CYAN}Environment: GitHub Codespace${NC}"
 echo ""
@@ -59,15 +59,42 @@ CONNECTIVITY_SUB_ID="cbd07569-930e-4b91-93b2-e6e87bdf02ed"
 LANDINGZONE_P1_SUB_ID="0982688a-6198-414f-aecd-0a55776bbfd0"
 LANDINGZONE_A2_SUB_ID="00bf28e6-523a-432b-8840-3c572cf4e12e"
 
-# List available management groups
+# List available management groups to see their actual names
 echo -e "${YELLOW}Available management groups:${NC}"
 az account management-group list --output table
+
+# UPDATED: Corrected management group names with -MG suffix
+MANAGEMENT_MG="Management-MG"
+IDENTITY_MG="Identity-MG"
+CONNECTIVITY_MG="Connectivity-MG"
+LANDING_ZONES_MG="Landing-Zones-MG"
+SANDBOX_MG="Sandbox-MG"
+
+# Function to check if management group exists
+check_mg_exists() {
+    local mg_name=$1
+    local exists=$(az account management-group list --query "[?name=='$mg_name'] | length(@)" --output tsv)
+    
+    if [ "$exists" -eq "1" ]; then
+        echo -e "${GREEN}Management group '$mg_name' exists.${NC}"
+        return 0
+    else
+        echo -e "${RED}Management group '$mg_name' does not exist!${NC}"
+        return 1
+    fi
+}
 
 # Function to assign subscription to management group
 assign_subscription() {
     local subscription_id=$1
     local management_group=$2
     local subscription_name=$3
+    
+    # First check if the management group exists
+    if ! check_mg_exists "$management_group"; then
+        echo -e "${RED}Skipping assignment for $subscription_name due to missing management group.${NC}"
+        return 1
+    fi
     
     echo -e "${CYAN}▸ Assigning subscription ${subscription_name} (${subscription_id}) to management group: ${management_group}${NC}"
     
@@ -87,27 +114,27 @@ SUCCESS_COUNT=0
 TOTAL_ASSIGNMENTS=5
 
 # Management subscription
-if assign_subscription "${MANAGEMENT_SUB_ID}" "Management" "Management-Sub"; then
+if assign_subscription "${MANAGEMENT_SUB_ID}" "${MANAGEMENT_MG}" "Management-Sub"; then
     ((SUCCESS_COUNT++))
 fi
 
 # Identity subscription
-if assign_subscription "${IDENTITY_SUB_ID}" "Identity" "Identity-Sub"; then
+if assign_subscription "${IDENTITY_SUB_ID}" "${IDENTITY_MG}" "Identity-Sub"; then
     ((SUCCESS_COUNT++))
 fi
 
 # Connectivity subscription
-if assign_subscription "${CONNECTIVITY_SUB_ID}" "Connectivity" "Connectivity-Sub"; then
+if assign_subscription "${CONNECTIVITY_SUB_ID}" "${CONNECTIVITY_MG}" "Connectivity-Sub"; then
     ((SUCCESS_COUNT++))
 fi
 
 # Landing Zone P1 subscription
-if assign_subscription "${LANDINGZONE_P1_SUB_ID}" "Landing-Zones" "LandingZone-P1-Sub"; then
+if assign_subscription "${LANDINGZONE_P1_SUB_ID}" "${LANDING_ZONES_MG}" "LandingZone-P1-Sub"; then
     ((SUCCESS_COUNT++))
 fi
 
 # Landing Zone A2 subscription
-if assign_subscription "${LANDINGZONE_A2_SUB_ID}" "Landing-Zones" "LandingZone-A2-Sub"; then
+if assign_subscription "${LANDINGZONE_A2_SUB_ID}" "${LANDING_ZONES_MG}" "LandingZone-A2-Sub"; then
     ((SUCCESS_COUNT++))
 fi
 
@@ -120,10 +147,3 @@ if [ "${SUCCESS_COUNT}" -eq "${TOTAL_ASSIGNMENTS}" ]; then
 else
     echo -e "${YELLOW}⚠️ Some subscription assignments failed. Please review the logs above.${NC}"
 fi
-
-echo -e "${CYAN}Subscription IDs:${NC}"
-echo -e "${CYAN}Management-Sub: ${MANAGEMENT_SUB_ID}${NC}"
-echo -e "${CYAN}Identity-Sub: ${IDENTITY_SUB_ID}${NC}"
-echo -e "${CYAN}Connectivity-Sub: ${CONNECTIVITY_SUB_ID}${NC}"
-echo -e "${CYAN}LandingZone-P1-Sub: ${LANDINGZONE_P1_SUB_ID}${NC}"
-echo -e "${CYAN}LandingZone-A2-Sub: ${LANDINGZONE_A2_SUB_ID}${NC}"
