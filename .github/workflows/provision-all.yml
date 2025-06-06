@@ -1,35 +1,148 @@
+# =======================================================================
+# Azure Enterprise Scale Subscription Provisioning Workflow
+# =======================================================================
+# Last Updated: 2025-06-06 16:49:16 UTC
+# Current User: GEP-V
+#
+# PROMPT ENGINEERING NOTES:
+# This workflow file was generated with AI assistance. Key aspects that
+# made the prompts effective:
+#
+# 1. Providing exact environment context (GitHub Actions + Azure)
+# 2. Specifying security requirements (OIDC vs service principal)
+# 3. Including references to the actual script names and locations
+# 4. Explaining the need for environment variables from secrets
+# 5. Detailing authentication requirements for subscription management
+#
+# When asking AI to generate similar workflows, be specific about:
+# - The exact cloud provider and service (Azure subscription management)
+# - Authentication method (OIDC for enhanced security)
+# - Required secrets/variables and where they should come from
+# - Script execution environment (PowerShell in this case)
+# - Any prerequisites that need to be installed (Azure CLI extensions)
+# =======================================================================
+
 name: Provision Azure Subscriptions
 
+# =======================================================================
+# SECTION 1: WORKFLOW TRIGGERS
+# =======================================================================
+# AI PROMPT TIP: For administrative operations like subscription creation,
+# using manual triggers (workflow_dispatch) is a best practice for control
+# =======================================================================
 on:
   workflow_dispatch:
-  # Other triggers as needed
+    # Manual trigger with no inputs
+    # This is intentional for subscription management to prevent
+    # accidental automated runs
+  
+  # Uncomment below if you want scheduled runs
+  # schedule:
+  #   - cron: '0 0 * * 0'  # Weekly on Sundays at midnight UTC
 
+# =======================================================================
+# SECTION 2: WORKFLOW JOBS
+# =======================================================================
+# AI PROMPT TIP: For cloud resource provisioning, keeping the workflow
+# as a single job improves traceability and simplifies troubleshooting
+# =======================================================================
 jobs:
   provision-all-subs:
+    name: Provision Azure Subscriptions
     runs-on: ubuntu-latest
+    
+    # Environment can be used to add protection rules
+    # environment: production
+    
     steps:
+      # =======================================================================
+      # STEP 1: REPOSITORY CHECKOUT
+      # =======================================================================
+      # AI PROMPT TIP: Always include specific version numbers for actions
+      # to ensure workflow stability over time
+      # =======================================================================
       - name: Checkout repository
         uses: actions/checkout@v3
-        
+        with:
+          # Fetch complete history for auditing purposes
+          fetch-depth: 0
+      
+      # =======================================================================
+      # STEP 2: AZURE AUTHENTICATION
+      # =======================================================================
+      # AI PROMPT TIP: OIDC authentication is the modern, more secure approach
+      # compared to using service principals with stored secrets
+      # =======================================================================
       - name: Azure Login via OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.MANAGEMENT_SUB_ID }}
+          # Allow-no-subscriptions is important when you might be creating
+          # your first subscription in the tenant
           allow-no-subscriptions: true
-          
+      
+      # =======================================================================
+      # STEP 3: AZURE CLI CONFIGURATION
+      # =======================================================================
+      # AI PROMPT TIP: Always include prerequisite setup steps in the workflow
+      # rather than assuming they exist in the environment
+      # =======================================================================
       - name: Enable dynamic extension install
         run: az config set extension.use_dynamic_install=yes_without_prompt
-          
+        # This allows the Azure CLI to automatically install extensions when needed
+      
+      # =======================================================================
+      # STEP 4: INSTALL REQUIRED EXTENSIONS
+      # =======================================================================
+      # AI PROMPT TIP: Be explicit about required extensions rather than
+      # relying on dynamic installation for predictable behavior
+      # =======================================================================
       - name: Install "account" CLI extension
         run: az extension add --name account --allow-preview
-          
+        # The account extension is required for subscription management
+        # --allow-preview is used because subscription creation APIs
+        # may still be in preview
+      
+      # =======================================================================
+      # STEP 5: SUBSCRIPTION PROVISIONING
+      # =======================================================================
+      # AI PROMPT TIP: Use environment variables to pass secrets to scripts
+      # rather than passing them as command line arguments which could be logged
+      # =======================================================================
       - name: Run provisioning script
         env:
+          # These secrets contain sensitive billing account information
+          # They are used by the script to create subscriptions under the
+          # correct billing scope in the Microsoft Customer Agreement
           AZURE_INVOICE_SECTION_ID: ${{ secrets.AZURE_INVOICE_SECTION_ID }}
           AZURE_BILLING_PROFILE_ID: ${{ secrets.AZURE_BILLING_PROFILE_ID }}
           AZURE_BILLING_ACCOUNT_ID: ${{ secrets.AZURE_BILLING_ACCOUNT_ID }}
         run: |
           cd ./scripts
+          # Using PowerShell to execute the script provides better error handling
+          # and enables more sophisticated Azure management capabilities
           pwsh ./provision-subscriptions.ps1
+      
+      # =======================================================================
+      # STEP 6: MANAGEMENT GROUP ASSIGNMENT
+      # =======================================================================
+      # AI PROMPT TIP: Separate concerns into different steps for clarity
+      # and easier troubleshooting
+      # =======================================================================
+      - name: Assign subscriptions to management groups
+        run: |
+          cd ./scripts
+          # Using the separate script that handles management group assignment
+          # This follows the principle of separation of concerns
+          pwsh ./assign-subscriptions.ps1
+      
+      # =======================================================================
+      # STEP 7: NOTIFICATION AND COMPLETION
+      # =======================================================================
+      # AI PROMPT TIP: Always include a clear completion step that can be
+      # easily identified in the workflow logs
+      # =======================================================================
+      - name: Confirm completion
+        run: echo "✅ Finished creating and assigning subscriptions: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
