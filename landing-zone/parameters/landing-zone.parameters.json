@@ -1,70 +1,128 @@
 {
+  /*
+  ============================================================
+  Azure Landing Zone Parameter File with Tokenized Subscriptions
+  ============================================================
+  Last Updated: 2025-06-06 19:31:28 UTC
+  Current User: GEP-V
+  
+  PROMPT ENGINEERING NOTES:
+  When asking AI to generate or modify Azure ARM parameter files, consider these best practices:
+  
+  1. Use tokenization for all sensitive or environment-specific values
+     - Subscription IDs should NEVER be hardcoded
+     - Use consistent token format like ${TOKEN_NAME} for easy replacement
+  
+  2. Include explicit type hints in your prompt
+     - "I need a JSON parameter file for ARM template deployment"
+     - "The parameter file should support CI/CD variable substitution"
+  
+  3. Specify exactly which values need to be parameterized
+     - "The subscription ID needs to be replaced with a token"
+     - "These values will be different across environments: X, Y, Z"
+  
+  4. Request validation checks for ARM parameter syntax
+     - "Ensure the JSON is valid according to ARM parameter schema"
+     - "Include the $schema reference at the top"
+  
+  5. Ask for detailed comments explaining each parameter section
+     - "Add comments explaining the networking parameters"
+     - "Include references to Azure documentation for complex parameters"
+  */
+  
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    // Resource location parameter
+    // This determines the Azure region where resources will be deployed
     "location": {
       "value": "eastus"
     },
+    
+    // Resource group name parameter
+    // This is the target resource group for deployment
     "rgName": {
       "value": "landingZone-RG"
     },
+    
+    // ========== NETWORKING PARAMETERS ==========
+    // These parameters define the virtual network configuration
     "vnetName": {
       "value": "landingZone-vnet"
     },
     "addressPrefix": {
-      "value": "10.0.0.0/16"
+      "value": "10.0.0.0/16"  // Ensure this doesn't overlap with other VNets
     },
     "subnetPrefix": {
-      "value": "10.0.1.0/24"
+      "value": "10.0.1.0/24"  // Subnet within the VNet address space
     },
+    
+    // ========== SECURITY PARAMETERS ==========
+    // Network Security Group configuration
     "nsgName": {
       "value": "landingZone-NSG"
     },
     "nsgRules": {
-    "value": [
-      {
-        "name": "AllowSSH",
-        "protocol": "Tcp",
-        "priority": 100,
-        "direction": "Inbound",
-        "access": "Allow",
-        "sourcePortRange": "*",
-        "destinationPortRange": "22",
-        "sourceAddressPrefix": "*",
-        "destinationAddressPrefix": "*",
-        "description": "Allow SSH from anywhere"
-      },
-      {
-        "name": "AllowHTTPS",
-        "priority": 200,
-        "direction": "Inbound",
-        "access": "Allow",
-        "protocol": "Tcp",
-        "sourcePortRange": "*",
-        "destinationPortRange": "443",
-        "sourceAddressPrefix": "*",
-        "destinationAddressPrefix": "*",
-        "description": "Allow HTTPS from anywhere"
-      },
-      {
-        "name": "DenyAllInbound",
-        "priority": 4096,
-        "direction": "Inbound",
-        "access": "Deny",
-        "protocol": "Tcp",
-        "sourcePortRange": "*",
-        "destinationPortRange": "*",
-        "sourceAddressPrefix": "*",
-        "destinationAddressPrefix": "*",
-        "description": "Deny all other inbound traffic"
+      "value": [
+        {
+          "name": "AllowSSH",
+          "protocol": "Tcp",
+          "priority": 100,
+          "direction": "Inbound",
+          "access": "Allow",
+          "sourcePortRange": "*",
+          "destinationPortRange": "22",
+          "sourceAddressPrefix": "*",
+          "destinationAddressPrefix": "*",
+          "description": "Allow SSH from anywhere"
+        },
+        {
+          "name": "AllowHTTPS",
+          "priority": 200,
+          "direction": "Inbound",
+          "access": "Allow",
+          "protocol": "Tcp",
+          "sourcePortRange": "*",
+          "destinationPortRange": "443",
+          "sourceAddressPrefix": "*",
+          "destinationAddressPrefix": "*",
+          "description": "Allow HTTPS from anywhere"
+        },
+        {
+          "name": "DenyAllInbound",
+          "priority": 4096,
+          "direction": "Inbound",
+          "access": "Deny",
+          "protocol": "Tcp",
+          "sourcePortRange": "*",
+          "destinationPortRange": "*",
+          "sourceAddressPrefix": "*",
+          "destinationAddressPrefix": "*",
+          "description": "Deny all other inbound traffic"
         }
       ]
     },
+    
+    // ========== COMPUTE PARAMETERS ==========
+    // Virtual machine naming
     "vmName": {
       "value": "landingZone-VM"
     },
+    
+    // ========== CROSS-SUBSCRIPTION REFERENCES ==========
+    // These parameters reference resources in other subscriptions
+    // Tokenized to allow for secure handling of subscription IDs
+    
+    // Log Analytics workspace for diagnostics
+    // SECURITY NOTE: Using token ${LANDINGZONE_SUBSCRIPTION_ID} instead of hardcoded value
     "diagnosticsWorkspaceId": {
-      "value": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
+      "value": "/subscriptions/${LANDINGZONE_SUBSCRIPTION_ID}/resourceGroups/LogAnalytics-RG/providers/Microsoft.OperationalInsights/workspaces/MyLAWorkspace"
+    },
+    
+    // Explicit subscription ID parameter for template operations
+    // This allows the main template to reference the correct subscription
+    "subscriptionId": {
+      "value": "${LANDINGZONE_SUBSCRIPTION_ID}"
     }
   }
 }

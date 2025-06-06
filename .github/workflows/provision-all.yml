@@ -1,7 +1,7 @@
 # =======================================================================
 # Azure Enterprise Scale Subscription Provisioning Workflow
 # =======================================================================
-# Last Updated: 2025-06-06 17:50:47 UTC
+# Last Updated: 2025-06-06 19:45:21 UTC
 # Current User: GEP-V
 #
 # PROMPT ENGINEERING NOTES:
@@ -32,9 +32,33 @@ name: Provision Azure Subscriptions
 # =======================================================================
 on:
   workflow_dispatch:
-    # Manual trigger with no inputs
-    # This is intentional for subscription management to prevent
-    # accidental automated runs
+    # Add input parameters to control which subscriptions to provision
+    inputs:
+      provision_management:
+        description: 'Provision Management subscription'
+        type: boolean
+        default: true
+        required: true
+      provision_identity:
+        description: 'Provision Identity subscription'
+        type: boolean
+        default: true
+        required: true
+      provision_connectivity:
+        description: 'Provision Connectivity subscription'
+        type: boolean
+        default: true
+        required: true
+      provision_landingzones:
+        description: 'Provision Landing Zone subscriptions'
+        type: boolean
+        default: true
+        required: true
+      provision_sandbox:
+        description: 'Provision Sandbox subscription'
+        type: boolean
+        default: false
+        required: true
   
   # Uncomment below if you want scheduled runs
   # schedule:
@@ -55,7 +79,7 @@ jobs:
     timeout-minutes: 60
     
     # Environment can be used to add protection rules
-    # environment: production
+    environment: production
     
     steps:
       # =======================================================================
@@ -112,7 +136,35 @@ jobs:
         # may still be in preview
       
       # =======================================================================
-      # STEP 5: SUBSCRIPTION PROVISIONING
+      # STEP 5: PREPARE PROVISIONING SCRIPT
+      # =======================================================================
+      # AI PROMPT TIP: Create a configuration file for your script to avoid
+      # hardcoding parameters and improve script reusability
+      # =======================================================================
+      - name: Prepare provisioning configuration
+        id: prep_config
+        run: |
+          # Create a configuration file based on workflow inputs
+          cat > ./scripts/provision-config.json << EOF
+          {
+            "provisionSubscriptions": {
+              "management": ${{ github.event.inputs.provision_management || 'true' }},
+              "identity": ${{ github.event.inputs.provision_identity || 'true' }},
+              "connectivity": ${{ github.event.inputs.provision_connectivity || 'true' }},
+              "landingZones": ${{ github.event.inputs.provision_landingzones || 'true' }},
+              "sandbox": ${{ github.event.inputs.provision_sandbox || 'false' }}
+            },
+            "subscriptionNamePrefix": "ESLZ",
+            "deploymentTimestamp": "$(date -u +"%Y%m%d%H%M%S")",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+          }
+          EOF
+          
+          echo "Configuration file created"
+          cat ./scripts/provision-config.json | jq .
+      
+      # =======================================================================
+      # STEP 6: SUBSCRIPTION PROVISIONING
       # =======================================================================
       # AI PROMPT TIP: Use environment variables to pass secrets to scripts
       # rather than passing them as command line arguments which could be logged
@@ -126,14 +178,20 @@ jobs:
           AZURE_INVOICE_SECTION_ID: ${{ secrets.AZURE_INVOICE_SECTION_ID }}
           AZURE_BILLING_PROFILE_ID: ${{ secrets.AZURE_BILLING_PROFILE_ID }}
           AZURE_BILLING_ACCOUNT_ID: ${{ secrets.AZURE_BILLING_ACCOUNT_ID }}
+          PROVISIONING_CONFIG_PATH: "./scripts/provision-config.json"
         run: |
           cd ./scripts
           # Using PowerShell to execute the script provides better error handling
           # and enables more sophisticated Azure management capabilities
-          pwsh ./provision-subscriptions.ps1
+          echo "Starting subscription provisioning at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          pwsh -File ./provision-subscriptions.ps1 -ConfigFile provision-config.json -Verbose | tee ../provision-log.txt
+          
+          # Extract created subscription IDs from the log file if the script outputs them in a parseable format
+          # This is useful for subsequent steps or for troubleshooting
+          echo "Subscription provisioning completed at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
       
       # =======================================================================
-      # STEP 6: MANAGEMENT GROUP ASSIGNMENT
+      # STEP 7: MANAGEMENT GROUP ASSIGNMENT
       # =======================================================================
       # AI PROMPT TIP: Separate concerns into different steps for clarity
       # and easier troubleshooting
@@ -144,20 +202,55 @@ jobs:
           cd ./scripts
           # Using the separate script that handles management group assignment
           # This follows the principle of separation of concerns
-          pwsh ./assign-subscriptions.ps1
+          echo "Starting management group assignment at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          pwsh -File ./assign-subscriptions.ps1 -ConfigFile provision-config.json -Verbose | tee ../mgassignment-log.txt
+          echo "Management group assignment completed at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
       
       # =======================================================================
-      # STEP 7: NOTIFICATION AND COMPLETION
+      # STEP 8: SAVE PROVISIONING LOGS
+      # =======================================================================
+      # AI PROMPT TIP: Always preserve logs for debugging and auditing purposes
+      # =======================================================================
+      - name: Upload provisioning logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: provisioning-logs-${{ github.run_id }}
+          path: |
+            provision-log.txt
+            mgassignment-log.txt
+          retention-days: 90
+          if-no-files-found: warn
+      
+      # =======================================================================
+      # STEP 9: NOTIFICATION AND COMPLETION
       # =======================================================================
       # AI PROMPT TIP: Always include a clear completion step that can be
       # easily identified in the workflow logs
       # =======================================================================
       - name: Confirm completion
         if: success()
-        run: echo "✅ Finished creating and assigning subscriptions: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+        run: |
+          echo "✅ Finished creating and assigning subscriptions: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "Subscriptions provisioned:"
+          if [[ "${{ github.event.inputs.provision_management || 'true' }}" == "true" ]]; then
+            echo "  - Management"
+          fi
+          if [[ "${{ github.event.inputs.provision_identity || 'true' }}" == "true" ]]; then
+            echo "  - Identity"
+          fi
+          if [[ "${{ github.event.inputs.provision_connectivity || 'true' }}" == "true" ]]; then
+            echo "  - Connectivity"
+          fi
+          if [[ "${{ github.event.inputs.provision_landingzones || 'true' }}" == "true" ]]; then
+            echo "  - Landing Zones (P1, A2)"
+          fi
+          if [[ "${{ github.event.inputs.provision_sandbox || 'false' }}" == "true" ]]; then
+            echo "  - Sandbox"
+          fi
       
       # =======================================================================
-      # STEP 8: ERROR HANDLING
+      # STEP 10: ERROR HANDLING
       # =======================================================================
       # AI PROMPT TIP: Include dedicated error handling steps to provide clear
       # information when things go wrong
@@ -172,16 +265,53 @@ jobs:
           echo "  - Insufficient permissions in the Azure tenant"
           echo "  - Rate limiting from the Azure Subscription API"
           echo "  - Network connectivity issues"
+          echo "  - Invalid billing account information"
+          
+          # Extract any error messages if available
+          if [[ -f provision-log.txt ]]; then
+            echo "Last 10 lines of provision log:"
+            tail -n 10 provision-log.txt
+          fi
       
       # =======================================================================
-      # STEP 9: ALWAYS EXECUTED CLEANUP
+      # STEP 11: ALWAYS EXECUTED CLEANUP AND SUMMARY
       # =======================================================================
       # AI PROMPT TIP: Include steps that should always run, regardless of
       # success or failure, using the 'always()' condition
       # =======================================================================
-      - name: Workflow metadata
+      - name: Workflow summary
         if: always()
         run: |
+          # Create a summary file
+          cat > $GITHUB_STEP_SUMMARY << EOF
+          # Azure Subscription Provisioning Summary
+          
+          **Execution Time:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Status:** ${{ job.status }}
+          **Triggered By:** ${{ github.actor }}
+          **Run ID:** ${{ github.run_id }}
+          **Repository:** ${{ github.repository }}
+          
+          ## Provisioned Subscriptions
+          
+          | Subscription Type | Provisioned |
+          | ----------------- | ----------- |
+          | Management        | ${{ github.event.inputs.provision_management || 'true' }} |
+          | Identity          | ${{ github.event.inputs.provision_identity || 'true' }} |
+          | Connectivity      | ${{ github.event.inputs.provision_connectivity || 'true' }} |
+          | Landing Zones     | ${{ github.event.inputs.provision_landingzones || 'true' }} |
+          | Sandbox           | ${{ github.event.inputs.provision_sandbox || 'false' }} |
+          
+          ## Next Steps
+          
+          1. Verify the subscriptions in the Azure Portal
+          2. Check management group assignments
+          3. Proceed with policy assignments
+          4. Deploy baseline resources
+          
+          [View Run Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          
           echo "Workflow execution completed at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "Workflow triggered by: ${{ github.actor }}"
           echo "Workflow run ID: ${{ github.run_id }}"

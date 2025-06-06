@@ -1,12 +1,57 @@
 {
+  /*
+  ============================================================
+  Azure Policy Assignment with Tokenized Subscription ID
+  ============================================================
+  Last Updated: 2025-06-06 19:39:13 UTC
+  Current User: GEP-V
+  
+  PROMPT ENGINEERING NOTES:
+  When creating policy assignment templates for Azure:
+  
+  1. Always use tokens for subscription IDs and tenant-specific values
+     - Replace hardcoded IDs with ${TOKEN_NAME} format
+     - This prevents security risks and enables deployment flexibility
+  
+  2. Include comments explaining:
+     - The policy's purpose and impact
+     - Any parameters and their expected values
+     - The scope of application (subscription, resource group, etc.)
+  
+  3. Request schema validation when generating templates
+     - "Ensure the JSON follows Azure policy assignment schema"
+     - "Make sure all required properties are included"
+  
+  4. Specify the format needed for ARM deployment vs. Azure CLI
+     - ARM templates use parameters and variables differently
+     - CLI-based approaches use direct token replacement
+  */
+  
   "name": "enforce-tag-policy",
   "properties": {
-    "scope": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/resourceGroups/landingZone-RG",
-    "policyDefinitionId": "/subscriptions/b222b4c3-dfc2-4533-a6bb-2305e55c8eb6/providers/Microsoft.Authorization/policyDefinitions/audit-cost-center-tag",
+    // The scope determines where the policy applies
+    // Using a token for subscription ID rather than hardcoding
+    "scope": "/subscriptions/${LANDINGZONE_SUBSCRIPTION_ID}/resourceGroups/landingZone-RG",
+    
+    // The policy definition to assign
+    // Again using a token for subscription ID
+    "policyDefinitionId": "/subscriptions/${LANDINGZONE_SUBSCRIPTION_ID}/providers/Microsoft.Authorization/policyDefinitions/audit-cost-center-tag",
+    
+    // Policy parameters section
     "parameters": {
       "tagName": {
-        "value": "CostCenter"
+        "value": "CostCenter" // Specifies which tag is required on resources
       }
-    }
+    },
+    
+    // Optional: description explaining the purpose of this policy assignment
+    "description": "Enforces the presence of a CostCenter tag on all resources in the landing zone",
+    
+    // Optional: display name for the Azure portal
+    "displayName": "Require Cost Center Tag on All Resources",
+    
+    // Optional: enforcement mode (Default = 1 = enforced)
+    // Set to 0 for DeployIfNotExists policies to monitor before enforcing
+    "enforcementMode": 1
   }
 }

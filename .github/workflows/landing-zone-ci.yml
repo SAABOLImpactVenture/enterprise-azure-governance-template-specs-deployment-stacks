@@ -1,4 +1,16 @@
-# File: .github/workflows/landing-zone-ci.yml
+# ===============================================================
+# Azure Landing Zone Deployment Workflow
+# ===============================================================
+# Last Updated: 2025-06-06 19:43:12 UTC
+# Current User's Login: GEP-V
+#
+# DESCRIPTION:
+# This workflow deploys the landing zone Bicep template to all
+# subscriptions in the Azure Enterprise Landing Zone architecture.
+# It uses a matrix strategy to efficiently deploy to multiple
+# subscriptions in parallel.
+# ===============================================================
+
 name: Deploy Landing Zone
 
 on:
@@ -7,43 +19,200 @@ on:
       - main
     paths:
       - 'landing-zone/**'
+  # Optional: Add manual trigger
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - development
 
+# Common environment variables shared across all jobs
 env:
-  AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
   AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
 
 jobs:
   deploy-landing-zone:
     runs-on: ubuntu-latest
-
+    # Add timeout protection to prevent hung jobs
+    timeout-minutes: 60
+    
+    # Use strategy.matrix to deploy to multiple subscriptions in parallel
     strategy:
+      # Continue to other subscriptions even if one fails
+      fail-fast: false
       matrix:
-        subscriptionId:
-          - ${{ secrets.MANAGEMENT_SUB_ID }}
-          - ${{ secrets.IDENTITY_SUB_ID }}
-          - ${{ secrets.CONNECTIVITY_SUB_ID }}
-          - ${{ secrets.LANDING_P1_SUB_ID }}
-          - ${{ secrets.LANDING_A2_SUB_ID }}
-          - ${{ secrets.SANDBOX_SUB_ID }}
+        include:
+          - subscription_name: "Management"
+            subscription_id: ${{ secrets.MANAGEMENT_SUB_ID }}
+          - subscription_name: "Identity"
+            subscription_id: ${{ secrets.IDENTITY_SUB_ID }}
+          - subscription_name: "Connectivity"
+            subscription_id: ${{ secrets.CONNECTIVITY_SUB_ID }}
+          - subscription_name: "LandingZone-P1"
+            subscription_id: ${{ secrets.LANDING_P1_SUB_ID }}
+          - subscription_name: "LandingZone-A2"
+            subscription_id: ${{ secrets.LANDING_A2_SUB_ID }}
+          - subscription_name: "Sandbox" 
+            subscription_id: ${{ secrets.SANDBOX_SUB_ID }}
+
+    # Name the job with the subscription for better visibility in GitHub UI
+    name: Deploy to ${{ matrix.subscription_name }}
 
     steps:
+      # ===============================================================
+      # STEP 1: CHECKOUT REPOSITORY
+      # ===============================================================
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          # Fetch complete history for auditing purposes
+          fetch-depth: 0
 
+      # ===============================================================
+      # STEP 2: PREPARE PARAMETERS FILE
+      # ===============================================================
+      - name: Prepare parameters file
+        id: prepare_params
+        run: |
+          echo "Preparing parameters file for ${{ matrix.subscription_name }} subscription"
+          
+          # Create a copy of the parameters file for this specific subscription
+          cp landing-zone/parameters/landing-zone.parameters.json landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
+          
+          # Replace any subscription ID tokens in the parameters file
+          sed -i "s/\${SUBSCRIPTION_ID}/${{ matrix.subscription_id }}/g" landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
+          
+          # Replace any other environment-specific tokens if needed
+          if [[ -f "landing-zone/parameters/tokens.json" ]]; then
+            echo "Applying token replacements from tokens.json"
+            # This would require a script that applies token replacements
+            # from a JSON file to your parameters file
+          fi
+          
+          echo "Parameters file prepared: landing-zone-${{ matrix.subscription_name }}.parameters.json"
+
+      # ===============================================================
+      # STEP 3: AZURE LOGIN
+      # ===============================================================
       - name: Azure Login via OIDC
-        uses: azure/login@v1
+        id: azure_login
+        uses: azure/login@v2
         with:
           client-id:              ${{ env.AZURE_OIDC_CLIENT_ID }}
           tenant-id:              ${{ env.AZURE_TENANT_ID }}
-          subscription-id:        ${{ matrix.subscriptionId }}
+          subscription-id:        ${{ matrix.subscription_id }}
           allow-no-subscriptions: true
-          auth-type:              SERVICE_PRINCIPAL
           audience:               api://AzureADTokenExchange
           subject:                repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
 
-      - name: Deploy landing-zone.bicep
+      # ===============================================================
+      # STEP 4: VALIDATE DEPLOYMENT
+      # ===============================================================
+      - name: Validate Bicep deployment
+        id: validate
         run: |
-          az deployment sub create \
+          echo "Validating deployment for ${{ matrix.subscription_name }} subscription"
+          
+          az deployment sub validate \
+            --name "landing-zone-${{ matrix.subscription_name }}-validate" \
             --location eastus \
             --template-file landing-zone/landing-zone.bicep \
-            --parameters landing-zone/parameters/landing-zone.parameters.json
+            --parameters @landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
+          
+          echo "Validation successful!"
+
+      # ===============================================================
+      # STEP 5: DEPLOY LANDING ZONE
+      # ===============================================================
+      - name: Deploy landing-zone.bicep
+        id: deploy
+        run: |
+          echo "Deploying landing zone to ${{ matrix.subscription_name }} subscription"
+          
+          DEPLOYMENT_NAME="landing-zone-${{ matrix.subscription_name }}-${{ github.run_id }}"
+          
+          az deployment sub create \
+            --name "$DEPLOYMENT_NAME" \
+            --location eastus \
+            --template-file landing-zone/landing-zone.bicep \
+            --parameters @landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
+          
+          # Store the deployment name for use in later steps
+          echo "DEPLOYMENT_NAME=$DEPLOYMENT_NAME" >> $GITHUB_ENV
+          
+          echo "Deployment completed successfully: $DEPLOYMENT_NAME"
+
+      # ===============================================================
+      # STEP 6: VERIFY DEPLOYMENT
+      # ===============================================================
+      - name: Verify deployment
+        id: verify
+        run: |
+          echo "Verifying deployment for ${{ matrix.subscription_name }} subscription"
+          
+          # Get deployment status
+          DEPLOYMENT_STATUS=$(az deployment sub show \
+            --name "${{ env.DEPLOYMENT_NAME }}" \
+            --query "properties.provisioningState" -o tsv)
+          
+          if [ "$DEPLOYMENT_STATUS" == "Succeeded" ]; then
+            echo "✅ Deployment succeeded!"
+          else
+            echo "❌ Deployment failed with status: $DEPLOYMENT_STATUS"
+            exit 1
+          fi
+
+      # ===============================================================
+      # STEP 7: SUCCESS REPORTING
+      # ===============================================================
+      - name: Report success
+        if: success()
+        run: |
+          echo "✅ Successfully deployed landing zone to ${{ matrix.subscription_name }} subscription"
+          echo "Deployment Name: ${{ env.DEPLOYMENT_NAME }}"
+          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+      
+      # ===============================================================
+      # STEP 8: FAILURE REPORTING
+      # ===============================================================
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "❌ Failed to deploy landing zone to ${{ matrix.subscription_name }} subscription"
+          echo "Please check the logs for details on the error."
+          echo "Common issues include:"
+          echo "  - Invalid parameters in the parameters file"
+          echo "  - Resource conflicts or naming conflicts"
+          echo "  - Insufficient permissions in the subscription"
+          echo "  - Exceeding quota limits"
+          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+
+      # ===============================================================
+      # STEP 9: DEPLOYMENT METADATA (ALWAYS RUNS)
+      # ===============================================================
+      - name: Record deployment metadata
+        if: always()
+        run: |
+          # Create a JSON record of this deployment attempt
+          cat << EOF > deployment-${{ matrix.subscription_name }}-metadata.json
+          {
+            "subscription": "${{ matrix.subscription_name }}",
+            "subscriptionId": "${{ matrix.subscription_id }}",
+            "deploymentName": "${{ env.DEPLOYMENT_NAME || 'unknown' }}",
+            "deploymentStatus": "${{ job.status }}",
+            "timestamp": "$(date -u +'%Y-%m-%d %H:%M:%S UTC')",
+            "runId": "${{ github.run_id }}",
+            "workflow": "${{ github.workflow }}",
+            "repository": "${{ github.repository }}",
+            "actor": "${{ github.actor }}",
+            "ref": "${{ github.ref }}"
+          }
+          EOF
+          
+          echo "Deployment metadata recorded for ${{ matrix.subscription_name }}"
