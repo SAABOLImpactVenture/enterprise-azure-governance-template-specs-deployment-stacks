@@ -1,7 +1,7 @@
 # =======================================================================
 # Azure Enterprise Scale Subscription Provisioning Workflow
 # =======================================================================
-# Last Updated: 2025-06-06 16:49:16 UTC
+# Last Updated: 2025-06-06 17:50:47 UTC
 # Current User: GEP-V
 #
 # PROMPT ENGINEERING NOTES:
@@ -50,6 +50,9 @@ jobs:
   provision-all-subs:
     name: Provision Azure Subscriptions
     runs-on: ubuntu-latest
+    # Adding timeout protection to prevent workflow from running indefinitely
+    # if something goes wrong with the Azure operations
+    timeout-minutes: 60
     
     # Environment can be used to add protection rules
     # environment: production
@@ -74,6 +77,7 @@ jobs:
       # compared to using service principals with stored secrets
       # =======================================================================
       - name: Azure Login via OIDC
+        id: azure_login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
@@ -90,6 +94,7 @@ jobs:
       # rather than assuming they exist in the environment
       # =======================================================================
       - name: Enable dynamic extension install
+        id: az_config
         run: az config set extension.use_dynamic_install=yes_without_prompt
         # This allows the Azure CLI to automatically install extensions when needed
       
@@ -100,6 +105,7 @@ jobs:
       # relying on dynamic installation for predictable behavior
       # =======================================================================
       - name: Install "account" CLI extension
+        id: install_extension
         run: az extension add --name account --allow-preview
         # The account extension is required for subscription management
         # --allow-preview is used because subscription creation APIs
@@ -112,6 +118,7 @@ jobs:
       # rather than passing them as command line arguments which could be logged
       # =======================================================================
       - name: Run provisioning script
+        id: provision_subs
         env:
           # These secrets contain sensitive billing account information
           # They are used by the script to create subscriptions under the
@@ -132,6 +139,7 @@ jobs:
       # and easier troubleshooting
       # =======================================================================
       - name: Assign subscriptions to management groups
+        id: assign_to_mg
         run: |
           cd ./scripts
           # Using the separate script that handles management group assignment
@@ -145,4 +153,36 @@ jobs:
       # easily identified in the workflow logs
       # =======================================================================
       - name: Confirm completion
+        if: success()
         run: echo "✅ Finished creating and assigning subscriptions: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+      
+      # =======================================================================
+      # STEP 8: ERROR HANDLING
+      # =======================================================================
+      # AI PROMPT TIP: Include dedicated error handling steps to provide clear
+      # information when things go wrong
+      # =======================================================================
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "❌ Workflow failed at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "Please check the logs above for detailed error information."
+          echo "Common issues include:"
+          echo "  - Missing or incorrect secrets"
+          echo "  - Insufficient permissions in the Azure tenant"
+          echo "  - Rate limiting from the Azure Subscription API"
+          echo "  - Network connectivity issues"
+      
+      # =======================================================================
+      # STEP 9: ALWAYS EXECUTED CLEANUP
+      # =======================================================================
+      # AI PROMPT TIP: Include steps that should always run, regardless of
+      # success or failure, using the 'always()' condition
+      # =======================================================================
+      - name: Workflow metadata
+        if: always()
+        run: |
+          echo "Workflow execution completed at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "Workflow triggered by: ${{ github.actor }}"
+          echo "Workflow run ID: ${{ github.run_id }}"
+          echo "Repository: ${{ github.repository }}"
