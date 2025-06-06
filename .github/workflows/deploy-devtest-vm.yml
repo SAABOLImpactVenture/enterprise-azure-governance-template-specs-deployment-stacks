@@ -1,7 +1,7 @@
 # ===============================================================
 # Azure DevTest Lab VM Deployment Workflow
 # ===============================================================
-# Last Updated: 2025-06-06 20:11:10 UTC
+# Last Updated: 2025-06-06 20:15:55 UTC
 # Current User: GEP-V
 #
 # DESCRIPTION:
@@ -69,19 +69,23 @@ jobs:
           # Create a working copy of the parameters file
           cp devtest-lab/parameters/devtest-vm.parameters.json devtest-lab/parameters/devtest-vm.parameters.processed.json
           
-          # Replace SSH public key and subscription ID tokens
-          sed -i "s|\${SSH_PUBLIC_KEY}|${{ secrets.SSH_PUBLIC_KEY }}|g" devtest-lab/parameters/devtest-vm.parameters.processed.json
-          sed -i "s|\${LANDING_A2_SUB_ID}|${{ secrets.LANDING_A2_SUB_ID }}|g" devtest-lab/parameters/devtest-vm.parameters.processed.json
+          # Create safe replacement files to avoid issues with special characters
+          echo '${{ secrets.SSH_PUBLIC_KEY }}' > ssh_key.txt
+          echo '${{ secrets.LANDING_A2_SUB_ID }}' > sub_id.txt
+          
+          # Method 1: Use safer file-based replacements with awk
+          awk -v ssh_key="$(cat ssh_key.txt)" '{gsub(/\${SSH_PUBLIC_KEY}/, ssh_key); print}' devtest-lab/parameters/devtest-vm.parameters.processed.json > temp1.json
+          awk -v sub_id="$(cat sub_id.txt)" '{gsub(/\${LANDING_A2_SUB_ID}/, sub_id); print}' temp1.json > devtest-lab/parameters/devtest-vm.parameters.processed.json
           
           # Apply workflow dispatch VM size parameter if provided
           if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.vm_size }}" ]; then
             echo "Using custom VM size: ${{ github.event.inputs.vm_size }}"
             
             # Use jq to modify the VM size parameter
-            jq '.parameters.vmSize.value = "${{ github.event.inputs.vm_size }}"' \
-              devtest-lab/parameters/devtest-vm.parameters.processed.json > devtest-lab/parameters/devtest-vm.parameters.temp.json
+            jq --arg vmsize "${{ github.event.inputs.vm_size }}" '.parameters.vmSize.value = $vmsize' \
+              devtest-lab/parameters/devtest-vm.parameters.processed.json > temp2.json
               
-            mv devtest-lab/parameters/devtest-vm.parameters.temp.json devtest-lab/parameters/devtest-vm.parameters.processed.json
+            mv temp2.json devtest-lab/parameters/devtest-vm.parameters.processed.json
             
             echo "Modified parameters with custom VM size"
           fi
@@ -89,11 +93,18 @@ jobs:
           # Set the processed parameters file as the one to use
           echo "PARAMS_FILE=devtest-lab/parameters/devtest-vm.parameters.processed.json" >> $GITHUB_ENV
           
+          # Clean up temp files
+          rm -f ssh_key.txt sub_id.txt temp1.json temp2.json
+          
           echo "✅ Parameters file prepared with secrets and customizations"
           
           # Validate the parameters file has proper JSON structure (but don't display contents with secrets)
-          jq 'keys' devtest-lab/parameters/devtest-vm.parameters.processed.json > /dev/null
-          echo "✅ Parameters file validated as valid JSON"
+          if jq empty devtest-lab/parameters/devtest-vm.parameters.processed.json; then
+            echo "✅ Parameters file validated as valid JSON"
+          else
+            echo "❌ Parameters file is not valid JSON. Aborting."
+            exit 1
+          fi
 
       - name: Azure Login via OIDC
         uses: azure/login@v2
@@ -162,6 +173,7 @@ jobs:
           rm -f devtest-lab/parameters/devtest-vm.parameters.processed.json
           rm -f devtest-lab/parameters/devtest-vm.parameters.temp.json
           rm -f devtest-lab/parameters/devtest-vm.parameters.modified.json
+          rm -f temp*.json
           echo "✅ Sensitive files removed"
 
       - name: Report Success
