@@ -1,0 +1,103 @@
+param location string = resourceGroup().location
+param spokeName string
+param hubNetworkId string
+param spokeAddressPrefix string = '10.1.0.0/16'
+param firewallPrivateIp string
+
+// Spoke network
+resource spokeNetwork 'Microsoft.Network/virtualNetworks@2023-04-01' = {
+  name: 'vnet-${spokeName}'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        spokeAddressPrefix
+      ]
+    }
+    subnets: [
+      {
+        name: 'WorkloadSubnet'
+        properties: {
+          addressPrefix: cidrSubnet(spokeAddressPrefix, 24, 0)
+          routeTable: {
+            id: workloadRouteTable.id
+          }
+          networkSecurityGroup: {
+            id: workloadNsg.id
+          }
+        }
+      },
+      {
+        name: 'AppServiceSubnet'
+        properties: {
+          addressPrefix: cidrSubnet(spokeAddressPrefix, 24, 1)
+          delegations: [
+            {
+              name: 'appservice-delegation'
+              properties: {
+                serviceName: 'Microsoft.Web/serverFarms'
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+
+// Route traffic through hub firewall
+resource workloadRouteTable 'Microsoft.Network/routeTables@2023-04-01' = {
+  name: 'rt-${spokeName}'
+  location: location
+  properties: {
+    routes: [
+      {
+        name: 'route-to-firewall'
+        properties: {
+          addressPrefix: '0.0.0.0/0'
+          nextHopType: 'VirtualAppliance'
+          nextHopIpAddress: firewallPrivateIp
+        }
+      }
+    ]
+  }
+}
+
+// NSG for workload subnet
+resource workloadNsg 'Microsoft.Network/networkSecurityGroups@2023-04-01' = {
+  name: 'nsg-${spokeName}'
+  location: location
+  properties: {
+    securityRules: [
+      {
+        name: 'deny-direct-internet'
+        properties: {
+          priority: 4096
+          direction: 'Outbound'
+          access: 'Deny'
+          protocol: '*'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'Internet'
+          destinationPortRange: '*'
+        }
+      }
+    ]
+  }
+}
+
+// Peer to hub
+resource peeringToHub 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-04-01' = {
+  name: '${spokeNetwork.name}/peering-to-hub'
+  properties: {
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    allowGatewayTransit: false
+    useRemoteGateways: false
+    remoteVirtualNetwork: {
+      id: hubNetworkId
+    }
+  }
+}
+
+output spokeNetworkId string = spokeNetwork.id

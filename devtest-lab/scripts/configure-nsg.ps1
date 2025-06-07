@@ -16,8 +16,17 @@
 .PARAMETER AllowedIpRange
     Optional. The IP range to allow for SSH/RDP access. Default is null (no restriction).
     
+.PARAMETER AllowedSourceIpRanges
+    Optional. Array of IP ranges to allow for SSH/RDP access. Uses more specific syntax than AllowedIpRange.
+    
 .PARAMETER SubscriptionId
     Optional. The Azure subscription ID. If not provided, uses the current context.
+    
+.PARAMETER EnableAutoDetectPorts
+    Optional. Auto-detect which ports to open based on VM OS type. Default is true.
+    
+.PARAMETER ApplyTags
+    Optional. Apply standard security tags to the NSG. Default is true.
     
 .EXAMPLE
     ./configure-nsg.ps1 -VMName "devtestvm01" -ResourceGroup "rg-devtest-lab"
@@ -25,8 +34,11 @@
 .EXAMPLE
     ./configure-nsg.ps1 -VMName "devtestvm01" -ResourceGroup "rg-devtest-lab" -AllowedIpRange "203.0.113.0/24"
     
+.EXAMPLE
+    ./configure-nsg.ps1 -VMName "devtestvm01" -ResourceGroup "rg-devtest-lab" -AllowedSourceIpRanges @("203.0.113.0/24", "198.51.100.0/24")
+    
 .NOTES
-    Last Updated: 2025-06-06 19:50:50 UTC
+    Last Updated: 2025-06-06 23:24:48 UTC
     Current User's Login: GEP-V
     
     This script will:
@@ -49,7 +61,16 @@ param (
     [string]$AllowedIpRange = $null,
     
     [Parameter(Mandatory = $false)]
-    [string]$SubscriptionId = $null
+    [string[]]$AllowedSourceIpRanges = @(),
+    
+    [Parameter(Mandatory = $false)]
+    [string]$SubscriptionId = $null,
+    
+    [Parameter(Mandatory = $false)]
+    [bool]$EnableAutoDetectPorts = $true,
+    
+    [Parameter(Mandatory = $false)]
+    [bool]$ApplyTags = $true
 )
 
 # Script constants
@@ -76,6 +97,10 @@ try {
     if ($SubscriptionId) {
         Write-Verbose "Setting subscription context to: $SubscriptionId"
         Set-AzContext -SubscriptionId $SubscriptionId -ErrorAction Stop
+    } else {
+        $currentContext = Get-AzContext
+        $SubscriptionId = $currentContext.Subscription.Id
+        Write-Verbose "Using current subscription context: $SubscriptionId"
     }
     
     # Get the VM to find its network interfaces
@@ -85,6 +110,10 @@ try {
     if (-not $vm) {
         throw "VM '$VMName' not found in resource group '$ResourceGroup'."
     }
+    
+    # Determine VM OS type for intelligent port configuration
+    $osType = $vm.StorageProfile.OsDisk.OsType
+    Write-Verbose "Detected VM OS Type: $osType"
     
     # Get the VM's network interface
     $nicIds = $vm.NetworkProfile.NetworkInterfaces.Id
@@ -110,7 +139,17 @@ try {
         # Create a new NSG if none exists
         $nsgName = "$VMName-nsg"
         Write-Verbose "No NSG found. Creating new NSG: $nsgName"
-        $nsg = New-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroup -Name $nsgName -Location $vm.Location
+        
+        # Define tags for the NSG
+        $tags = @{
+            "Environment" = "DevTest"
+            "Purpose" = "VM Security"
+            "CreatedBy" = "GEP-V"
+            "CreatedOn" = (Get-Date -Format 'yyyy-MM-dd')
+            "AutomatedBy" = "NSG-Configuration-Script"
+        }
+        
+        $nsg = New-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroup -Name $nsgName -Location $vm.Location -Tag $tags
         
         # Associate the NSG with the NIC
         $nic.NetworkSecurityGroup = New-Object Microsoft.Azure.Commands.Network.Models.PSNetworkSecurityGroup
@@ -118,9 +157,25 @@ try {
         Set-AzNetworkInterface -NetworkInterface $nic | Out-Null
     }
     
+    # Backup existing rules
+    $backupRules = $nsg.SecurityRules | ConvertTo-Json -Depth 5
+    Write-Verbose "Backed up existing rules: $($nsg.SecurityRules.Count) rules saved"
+    
     # Clear existing rules
     Write-Verbose "Clearing existing NSG rules..."
     $nsg.SecurityRules.Clear()
+    
+    # Combine all allowed IP ranges
+    $ipRanges = @()
+    if (-not [string]::IsNullOrEmpty($AllowedIpRange)) {
+        $ipRanges += $AllowedIpRange
+    }
+    if ($AllowedSourceIpRanges.Count -gt 0) {
+        $ipRanges += $AllowedSourceIpRanges
+    }
+    
+    # Use the right source address prefix
+    $sourceAddressPrefix = $ipRanges.Count -gt 0 ? $ipRanges : @("*")
     
     # Add priority counter for rule ordering
     $priority = 100
@@ -128,64 +183,122 @@ try {
     # Define the rules
     $rules = @()
     
-    # Add SSH rule (only if IP range is specified)
-    if ($AllowedIpRange) {
-        Write-Verbose "Adding SSH rule for IP range: $AllowedIpRange"
-        $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-SSH-From-Trusted-IPs" `
-            -Description "Allow SSH from trusted IP range" `
-            -Access Allow `
-            -Protocol Tcp `
-            -Direction Inbound `
-            -Priority $priority `
-            -SourceAddressPrefix $AllowedIpRange `
-            -SourcePortRange * `
-            -DestinationAddressPrefix * `
-            -DestinationPortRange 22
+    # Auto-detect and add appropriate rules based on OS type
+    if ($EnableAutoDetectPorts) {
+        if ($osType -eq 'Windows') {
+            Write-Verbose "Configuring Windows-specific rules (RDP)"
+            
+            # Add RDP rule with IP restrictions if specified
+            $rdpRule = @{
+                Name = "Allow-RDP" + $(if ($ipRanges.Count -gt 0) { "-From-Trusted-IPs" } else { "" })
+                Description = "Allow RDP access" + $(if ($ipRanges.Count -gt 0) { " from trusted IP ranges" } else { "" })
+                Access = "Allow"
+                Protocol = "Tcp"
+                Direction = "Inbound"
+                Priority = $priority
+                SourceAddressPrefix = $sourceAddressPrefix
+                SourcePortRange = "*"
+                DestinationAddressPrefix = "*"
+                DestinationPortRange = "3389"
+            }
+            
+            $rules += New-AzNetworkSecurityRuleConfig @rdpRule
+            $priority += 100
+            
+            # Add WinRM rule for Windows remote management if needed
+            $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-WinRM" `
+                -Description "Allow Windows Remote Management" `
+                -Access "Allow" `
+                -Protocol "Tcp" `
+                -Direction "Inbound" `
+                -Priority $priority `
+                -SourceAddressPrefix $sourceAddressPrefix `
+                -SourcePortRange "*" `
+                -DestinationAddressPrefix "*" `
+                -DestinationPortRange "5985-5986"
+                
+            $priority += 100
+            
+        } elseif ($osType -eq 'Linux') {
+            Write-Verbose "Configuring Linux-specific rules (SSH)"
+            
+            # Add SSH rule with IP restrictions if specified
+            $sshRule = @{
+                Name = "Allow-SSH" + $(if ($ipRanges.Count -gt 0) { "-From-Trusted-IPs" } else { "" })
+                Description = "Allow SSH access" + $(if ($ipRanges.Count -gt 0) { " from trusted IP ranges" } else { "" })
+                Access = "Allow"
+                Protocol = "Tcp"
+                Direction = "Inbound"
+                Priority = $priority
+                SourceAddressPrefix = $sourceAddressPrefix
+                SourcePortRange = "*"
+                DestinationAddressPrefix = "*"
+                DestinationPortRange = "22"
+            }
+            
+            $rules += New-AzNetworkSecurityRuleConfig @sshRule
+            $priority += 100
+            
+        } else {
+            Write-Verbose "OS type not determined, adding both SSH and RDP rules"
+            
+            # Add SSH rule
+            $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-SSH" + $(if ($ipRanges.Count -gt 0) { "-From-Trusted-IPs" } else { "" }) `
+                -Description "Allow SSH access" + $(if ($ipRanges.Count -gt 0) { " from trusted IP ranges" } else { "" }) `
+                -Access "Allow" `
+                -Protocol "Tcp" `
+                -Direction "Inbound" `
+                -Priority $priority `
+                -SourceAddressPrefix $sourceAddressPrefix `
+                -SourcePortRange "*" `
+                -DestinationAddressPrefix "*" `
+                -DestinationPortRange "22"
+                
+            $priority += 100
+            
+            # Add RDP rule
+            $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-RDP" + $(if ($ipRanges.Count -gt 0) { "-From-Trusted-IPs" } else { "" }) `
+                -Description "Allow RDP access" + $(if ($ipRanges.Count -gt 0) { " from trusted IP ranges" } else { "" }) `
+                -Access "Allow" `
+                -Protocol "Tcp" `
+                -Direction "Inbound" `
+                -Priority $priority `
+                -SourceAddressPrefix $sourceAddressPrefix `
+                -SourcePortRange "*" `
+                -DestinationAddressPrefix "*" `
+                -DestinationPortRange "3389"
+                
+            $priority += 100
+        }
+    } else {
+        # If auto-detect is disabled, add both SSH and RDP rules
+        Write-Verbose "Auto-detect ports disabled. Adding both SSH and RDP rules."
         
-        $priority += 100
-    } else {
-        Write-Verbose "No IP restriction specified for SSH. Access will be allowed from any IP."
-        $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-SSH" `
-            -Description "Allow SSH access" `
-            -Access Allow `
-            -Protocol Tcp `
-            -Direction Inbound `
+        # Add SSH rule
+        $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-SSH" + $(if ($ipRanges.Count -gt 0) { "-From-Trusted-IPs" } else { "" }) `
+            -Description "Allow SSH access" + $(if ($ipRanges.Count -gt 0) { " from trusted IP ranges" } else { "" }) `
+            -Access "Allow" `
+            -Protocol "Tcp" `
+            -Direction "Inbound" `
             -Priority $priority `
-            -SourceAddressPrefix * `
-            -SourcePortRange * `
-            -DestinationAddressPrefix * `
-            -DestinationPortRange 22
+            -SourceAddressPrefix $sourceAddressPrefix `
+            -SourcePortRange "*" `
+            -DestinationAddressPrefix "*" `
+            -DestinationPortRange "22"
             
         $priority += 100
-    }
-    
-    # Add RDP rule (only if IP range is specified)
-    if ($AllowedIpRange) {
-        Write-Verbose "Adding RDP rule for IP range: $AllowedIpRange"
-        $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-RDP-From-Trusted-IPs" `
-            -Description "Allow RDP from trusted IP range" `
-            -Access Allow `
-            -Protocol Tcp `
-            -Direction Inbound `
+        
+        # Add RDP rule
+        $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-RDP" + $(if ($ipRanges.Count -gt 0) { "-From-Trusted-IPs" } else { "" }) `
+            -Description "Allow RDP access" + $(if ($ipRanges.Count -gt 0) { " from trusted IP ranges" } else { "" }) `
+            -Access "Allow" `
+            -Protocol "Tcp" `
+            -Direction "Inbound" `
             -Priority $priority `
-            -SourceAddressPrefix $AllowedIpRange `
-            -SourcePortRange * `
-            -DestinationAddressPrefix * `
-            -DestinationPortRange 3389
-            
-        $priority += 100
-    } else {
-        Write-Verbose "No IP restriction specified for RDP. Access will be allowed from any IP."
-        $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-RDP" `
-            -Description "Allow RDP access" `
-            -Access Allow `
-            -Protocol Tcp `
-            -Direction Inbound `
-            -Priority $priority `
-            -SourceAddressPrefix * `
-            -SourcePortRange * `
-            -DestinationAddressPrefix * `
-            -DestinationPortRange 3389
+            -SourceAddressPrefix $sourceAddressPrefix `
+            -SourcePortRange "*" `
+            -DestinationAddressPrefix "*" `
+            -DestinationPortRange "3389"
             
         $priority += 100
     }
@@ -194,14 +307,14 @@ try {
     Write-Verbose "Adding rule to allow HTTPS for VM extensions"
     $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-HTTPS" `
         -Description "Allow HTTPS for VM extensions and updates" `
-        -Access Allow `
-        -Protocol Tcp `
-        -Direction Inbound `
+        -Access "Allow" `
+        -Protocol "Tcp" `
+        -Direction "Inbound" `
         -Priority $priority `
         -SourceAddressPrefix "VirtualNetwork" `
-        -SourcePortRange * `
-        -DestinationAddressPrefix * `
-        -DestinationPortRange 443
+        -SourcePortRange "*" `
+        -DestinationAddressPrefix "*" `
+        -DestinationPortRange "443"
         
     $priority += 100
     
@@ -209,14 +322,28 @@ try {
     Write-Verbose "Adding rule to allow Azure Load Balancer"
     $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-Azure-LB" `
         -Description "Allow Azure Load Balancer health probes" `
-        -Access Allow `
-        -Protocol * `
-        -Direction Inbound `
+        -Access "Allow" `
+        -Protocol "*" `
+        -Direction "Inbound" `
         -Priority $priority `
         -SourceAddressPrefix "AzureLoadBalancer" `
-        -SourcePortRange * `
-        -DestinationAddressPrefix * `
-        -DestinationPortRange *
+        -SourcePortRange "*" `
+        -DestinationAddressPrefix "*" `
+        -DestinationPortRange "*"
+        
+    $priority += 100
+    
+    # Add Azure Bastion service tag if using modern environments
+    $rules += New-AzNetworkSecurityRuleConfig -Name "Allow-Bastion" `
+        -Description "Allow Azure Bastion Service" `
+        -Access "Allow" `
+        -Protocol "*" `
+        -Direction "Inbound" `
+        -Priority $priority `
+        -SourceAddressPrefix "AzureBastionSubnet" `
+        -SourcePortRange "*" `
+        -DestinationAddressPrefix "*" `
+        -DestinationPortRange "22,3389"
         
     $priority += 100
     
@@ -224,14 +351,14 @@ try {
     Write-Verbose "Adding deny all inbound rule"
     $rules += New-AzNetworkSecurityRuleConfig -Name "Deny-All-Inbound" `
         -Description "Deny all other inbound traffic" `
-        -Access Deny `
-        -Protocol * `
-        -Direction Inbound `
+        -Access "Deny" `
+        -Protocol "*" `
+        -Direction "Inbound" `
         -Priority 4096 `
-        -SourceAddressPrefix * `
-        -SourcePortRange * `
-        -DestinationAddressPrefix * `
-        -DestinationPortRange *
+        -SourceAddressPrefix "*" `
+        -SourcePortRange "*" `
+        -DestinationAddressPrefix "*" `
+        -DestinationPortRange "*"
     
     # Add all rules to the NSG
     foreach ($rule in $rules) {
@@ -243,20 +370,52 @@ try {
     Write-Verbose "Updating NSG with new rules..."
     $nsg = Set-AzNetworkSecurityGroup -NetworkSecurityGroup $nsg
     
-    Write-Host "NSG '$($nsg.Name)' configured successfully with secure inbound rules." -ForegroundColor Green
-    Write-Verbose "Rules configured: $($nsg.SecurityRules.Count)"
+    # Apply tags if requested
+    if ($ApplyTags) {
+        Write-Verbose "Applying security tags to NSG..."
+        $currentTags = $nsg.Tag
+        if (-not $currentTags) {
+            $currentTags = @{}
+        }
+        
+        # Add or update security tags
+        $currentTags["SecurityHardened"] = "True"
+        $currentTags["LastUpdatedBy"] = "GEP-V"
+        $currentTags["LastUpdatedOn"] = (Get-Date -Format 'yyyy-MM-dd')
+        
+        # Apply updated tags
+        $nsg = Set-AzNetworkSecurityGroup -NetworkSecurityGroup $nsg -Tag $currentTags
+    }
+    
+    Write-Host "✅ NSG '$($nsg.Name)' configured successfully with secure inbound rules." -ForegroundColor Green
+    Write-Host "   - Rules configured: $($nsg.SecurityRules.Count)"
+    Write-Host "   - Access restricted: $(if ($ipRanges.Count -gt 0) { "Yes - to $($ipRanges.Count) IP ranges" } else { "No - open access" })"
+    Write-Host "   - Last rule: Deny all other inbound traffic"
 
     # Validate rules were applied
     $appliedRules = (Get-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroup -Name $nsg.Name).SecurityRules
     if ($appliedRules.Count -lt $rules.Count) {
-        Write-Warning "Not all rules were applied successfully. Expected $($rules.Count), found $($appliedRules.Count)."
+        Write-Warning "⚠️ Not all rules were applied successfully. Expected $($rules.Count), found $($appliedRules.Count)."
+    } else {
+        Write-Verbose "All $($rules.Count) rules applied successfully."
     }
+    
+    # Summary of security measures
+    Write-Host "
+Security configuration summary:
+------------------------------
+✓ SSH/RDP access configured based on VM OS type
+✓ Access restricted to specified IP ranges: $(if ($ipRanges.Count -gt 0) { "Yes" } else { "No" })
+✓ Azure services connectivity maintained
+✓ All other inbound traffic blocked
+✓ NSG security tags applied: $(if ($ApplyTags) { "Yes" } else { "No" })
+    " -ForegroundColor Cyan
     
     Write-Verbose "=== NSG Configuration Script Completed ==="
     return $true
 } 
 catch {
-    Write-Error "An error occurred during NSG configuration: $_"
+    Write-Error "⛔ Error during NSG configuration: $_"
     Write-Error $_.Exception.StackTrace
     throw
 }

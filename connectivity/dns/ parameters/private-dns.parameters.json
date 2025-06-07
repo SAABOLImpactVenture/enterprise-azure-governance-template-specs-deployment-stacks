@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "hubVnetId": {
+      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-connectivity-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub"
+    },
+    "spokeVnetIds": {
+      "value": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-devtest-lab/providers/Microsoft.Network/virtualNetworks/vnet-devtest",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod/providers/Microsoft.Network/virtualNetworks/vnet-prod"
+      ]
+    },
+    "tags": {
+      "value": {
+        "environment": "production",
+        "costCenter": "IT",
+        "deployedBy": "GEP-V",
+        "deploymentDate": "2025-06-06"
+      }
+    },
+    "privateDnsZones": {
+      "value": [
+        "privatelink.blob.core.windows.net",
+        "privatelink.vaultcore.azure.net",
+        "privatelink.database.windows.net",
+        "privatelink.azurewebsites.net",
+        "privatelink.servicebus.windows.net",
+        "privatelink.azurecr.io"
+      ]
+    }
+  }
+}
