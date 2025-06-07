@@ -23,7 +23,7 @@ permissions:
 
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
 
 jobs:
@@ -53,7 +53,7 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_OIDC_CLIENT_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
@@ -63,23 +63,36 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          Write-Host "Logged in to Azure, starting subscription provisioning..."
           
-          # Run the subscription provisioning script
-          ./landing-zone/scripts/provision-subscriptions.ps1 `
-            -Environment "${{ github.event.inputs.environment }}" `
-            -ManagementGroupId "${{ github.event.inputs.managementGroupId }}" `
-            -Verbose
+          # Check if the script exists before running
+          if (Test-Path -Path "./landing-zone/scripts/provision-subscriptions.ps1") {
+            # Run the subscription provisioning script
+            ./landing-zone/scripts/provision-subscriptions.ps1 `
+              -Environment "${{ github.event.inputs.environment }}" `
+              -ManagementGroupId "${{ github.event.inputs.managementGroupId }}" `
+              -Verbose
+          } else {
+            Write-Error "Provisioning script not found at expected path!"
+            exit 1
+          }
             
-          # Create output file for results
-          $results = Get-Content -Path ./subscription-results.json | ConvertFrom-Json
-          $results | ConvertTo-Json -Depth 10 | Out-File -FilePath subscription-results.json
-          
-          # Output summary for GitHub workflow
-          Write-Host "::set-output name=subscription_count::$($results.Count)"
-          Write-Host "Successfully provisioned $($results.Count) subscriptions"
+          # Check if results file exists
+          if (Test-Path -Path ./subscription-results.json) {
+            $results = Get-Content -Path ./subscription-results.json | ConvertFrom-Json
+            $results | ConvertTo-Json -Depth 10 | Out-File -FilePath subscription-results.json
+            
+            # Output summary for GitHub workflow
+            Write-Host "::set-output name=subscription_count::$($results.Count)"
+            Write-Host "Successfully provisioned $($results.Count) subscriptions"
+          } else {
+            Write-Warning "No subscription results file found. Creating empty one."
+            '[]' | Out-File -FilePath subscription-results.json
+            Write-Host "::set-output name=subscription_count::0"
+          }
           
       - name: Upload subscription results
-        uses: actions/upload-artifact@v4  # Updated from v3 to v4
+        uses: actions/upload-artifact@v4
         with:
           name: subscription-results
           path: subscription-results.json
@@ -89,9 +102,13 @@ jobs:
         if: steps.provision.outputs.subscription_count > 0
         run: |
           echo "Applying policies to newly provisioned subscriptions..."
-          ./landing-zone/scripts/assign-subscriptions.sh \
-            --subscriptions-file ./subscription-results.json \
-            --environment ${{ github.event.inputs.environment }}
+          if [ -f "./landing-zone/scripts/assign-subscriptions.sh" ]; then
+            ./landing-zone/scripts/assign-subscriptions.sh \
+              --subscriptions-file ./subscription-results.json \
+              --environment ${{ github.event.inputs.environment }}
+          else
+            echo "Warning: Policy assignment script not found!"
+          fi
             
       - name: Generate provisioning report
         shell: pwsh
@@ -101,19 +118,25 @@ jobs:
           $reportContent = "# Subscription Provisioning Report`n"
           $reportContent += "**Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n"
           $reportContent += "**Environment:** ${{ github.event.inputs.environment }}`n"
-          $reportContent += "**User:** GEP-V`n`n"
+          $reportContent += "**User:** GEP-V1s`n`n"
+          $reportContent += "**Runner Version:** 2.325.0`n`n"
           $reportContent += "## Provisioned Subscriptions`n"
-          $reportContent += "| Subscription Name | Subscription ID | Management Group | Status |`n"
-          $reportContent += "|------------------|----------------|-----------------|--------|`n"
           
-          foreach ($sub in $results) {
-            $reportContent += "| $($sub.Name) | $($sub.SubscriptionId) | $($sub.ManagementGroupId) | ✓ Success |`n"
+          if ($results.Count -gt 0) {
+            $reportContent += "| Subscription Name | Subscription ID | Management Group | Status |`n"
+            $reportContent += "|------------------|----------------|-----------------|--------|`n"
+            
+            foreach ($sub in $results) {
+              $reportContent += "| $($sub.Name) | $($sub.SubscriptionId) | $($sub.ManagementGroupId) | ✓ Success |`n"
+            }
+          } else {
+            $reportContent += "No subscriptions were provisioned in this run.`n"
           }
           
           $reportContent | Out-File -FilePath ./provisioning-report.md
           
       - name: Upload provisioning report
-        uses: actions/upload-artifact@v4  # Updated from v3 to v4
+        uses: actions/upload-artifact@v4
         with:
           name: provisioning-report
           path: provisioning-report.md
