@@ -6,7 +6,9 @@ param location string = resourceGroup().location
 param environment string = 'production'
 
 @description('Key Vault name')
-param keyVaultName string = 'kv-identity-${uniqueString(resourceGroup().id)}'
+@minLength(3)
+@maxLength(24)
+param keyVaultName string = 'kv${uniqueString(resourceGroup().id, environment)}' // Simplified name
 
 @description('Azure AD tenant ID')
 param tenantId string
@@ -78,43 +80,6 @@ resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-04-01' = {
       }
     ]
   }
-}
-
-// Create private DNS zone for Key Vault if specified
-resource privateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: 'privatelink.vaultcore.azure.net'
-  location: 'global'
-  tags: tags
-}
-
-// Link the private DNS zone to the VNet
-resource privateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  parent: privateDnsZone
-  name: 'link-to-${split(vnetId, '/')[8]}'
-  location: 'global'
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: {
-      id: vnetId
-    }
-  }
-}
-
-// Create A record for the private endpoint
-resource privateDnsRecord 'Microsoft.Network/privateDnsZones/A@2020-06-01' = {
-  parent: privateDnsZone
-  name: keyVaultName
-  properties: {
-    ttl: 3600
-    aRecords: [
-      {
-        ipv4Address: privateEndpoint.properties.customDnsConfigs[0].ipAddresses[0]
-      }
-    ]
-  }
-  dependsOn: [
-    privateEndpoint
-  ]
 }
 
 // Output Key Vault resource ID
