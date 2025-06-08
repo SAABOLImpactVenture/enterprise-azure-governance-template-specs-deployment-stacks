@@ -1,12 +1,10 @@
+# ==================================================================================
+# Enterprise Azure Landing Zone - Identity Resources Deployment
+# ==================================================================================
+
 name: Deploy Identity Resources
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/deploy-identity.yml'
-  
   workflow_dispatch:
     inputs:
       environment:
@@ -44,7 +42,7 @@ env:
 
 jobs:
   # ==================================================================================
-  # VERIFY PREREQUISITES
+  # VERIFY PREREQUISITES & CREATE RESOURCE GROUP
   # ==================================================================================
   verify-prerequisites:
     name: Verify Prerequisites
@@ -57,67 +55,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check required secrets
-        run: |
-          # Verify tenant ID
-          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
-            echo "::error::AZURE_TENANT_ID secret is not set"
-            exit 1
-          fi
-          
-          # Verify client ID
-          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
-            echo "::error::AZURE_CLIENT_ID secret is not set"
-            exit 1
-          fi
-          
-          # Verify subscription ID
-          if [ -z "${{ secrets.IDENTITY_SUBSCRIPTION_ID }}" ]; then
-            echo "::error::IDENTITY_SUBSCRIPTION_ID secret is not set"
-            exit 1
-          fi
-          
-          echo "All required secrets are configured."
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.IDENTITY_SUBSCRIPTION_ID }}
-      
-      - name: Verify Azure connectivity
-        run: |
-          echo "Verifying Azure permissions..."
-          
-          # Try to list resource groups to verify permissions
-          if ! az group list --query "[].name" -o tsv &>/dev/null; then
-            echo "::error::Unable to list resource groups. Check service principal permissions."
-            exit 1
-          fi
-          
-          echo "Azure connectivity verified successfully."
-          
-      - name: Set output parameters
-        id: output_params
-        run: |
-          echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
-          echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
-
-  # ==================================================================================
-  # DEPLOY IDENTITY INFRASTRUCTURE
-  # ==================================================================================
-  deploy-identity-infrastructure:
-    name: Deploy Identity Infrastructure
-    needs: verify-prerequisites
-    runs-on: ubuntu-latest
-    outputs:
-      vnet_id: ${{ steps.vnet_output.outputs.vnet_id }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -136,16 +73,40 @@ jobs:
           
           echo "Resource group created or confirmed."
       
-      - name: Create Bicep module files
+      - name: Set output parameters
+        id: output_params
         run: |
-          echo "Creating necessary Bicep module files..."
-          
-          # Create modules directory
-          mkdir -p modules
+          echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
+          echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
+
+  # ==================================================================================
+  # DEPLOY IDENTITY NETWORK
+  # ==================================================================================
+  deploy-identity-network:
+    name: Deploy Identity Network
+    needs: verify-prerequisites
+    runs-on: ubuntu-latest
+    outputs:
+      vnet_id: ${{ steps.vnet_output.outputs.vnet_id }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.IDENTITY_SUBSCRIPTION_ID }}
+      
+      - name: Create identity-network.bicep
+        run: |
+          # Create directory structure
+          mkdir -p landing-zone/modules
           
           # Create identity-network.bicep file
-          echo "Creating identity-network.bicep..."
-          cat > modules/identity-network.bicep << 'EOF'
+          cat > landing-zone/modules/identity-network.bicep << 'EOF'
           // Identity Network for cloud-only deployment
           @description('Azure region for all resources')
           param location string = resourceGroup().location
@@ -209,257 +170,6 @@ jobs:
           output vnetId string = identityVNet.id
           output vnetName string = identityVNet.name
           EOF
-          
-          # Create key-vault.bicep file
-          echo "Creating key-vault.bicep..."
-          cat > modules/key-vault.bicep << 'EOF'
-          // Key Vault with private endpoint for identity resources
-          @description('Azure region for all resources')
-          param location string = resourceGroup().location
-
-          @description('Environment name')
-          param environment string = 'production'
-
-          @description('Key Vault name')
-          param keyVaultName string = 'kv-identity-${uniqueString(resourceGroup().id)}'
-
-          @description('Azure AD tenant ID')
-          param tenantId string
-
-          @description('ID of the identity VNet')
-          param vnetId string
-
-          @description('Name of the subnet for private endpoints')
-          param privateEndpointSubnetName string = 'snet-private-endpoints'
-
-          @description('SKU name for Key Vault')
-          param skuName string = 'premium'
-
-          @description('Tags to apply to all resources')
-          param tags object = {
-            environment: environment
-            workload: 'identity'
-            deployment: 'bicep'
-          }
-
-          // Reference the subnet for private endpoint
-          resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
-            name: '${split(vnetId, '/')[8]}/${privateEndpointSubnetName}'
-          }
-
-          // Create Key Vault with enhanced security
-          resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-            name: keyVaultName
-            location: location
-            tags: tags
-            properties: {
-              sku: {
-                family: 'A'
-                name: skuName
-              }
-              tenantId: tenantId
-              enabledForDeployment: true
-              enabledForDiskEncryption: true
-              enabledForTemplateDeployment: true
-              enableRbacAuthorization: true
-              enableSoftDelete: true
-              softDeleteRetentionInDays: 90
-              publicNetworkAccess: 'Disabled'
-              networkAcls: {
-                bypass: 'AzureServices'
-                defaultAction: 'Deny'
-              }
-            }
-          }
-
-          // Create private endpoint for Key Vault
-          resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-04-01' = {
-            name: 'pe-${keyVaultName}'
-            location: location
-            tags: tags
-            properties: {
-              subnet: {
-                id: subnet.id
-              }
-              privateLinkServiceConnections: [
-                {
-                  name: 'connection-to-${keyVaultName}'
-                  properties: {
-                    privateLinkServiceId: keyVault.id
-                    groupIds: [
-                      'vault'
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-
-          // Output Key Vault resource ID
-          output keyVaultId string = keyVault.id
-          output keyVaultName string = keyVault.name
-          EOF
-          
-          # Create managed-identities.bicep file
-          echo "Creating managed-identities.bicep..."
-          cat > modules/managed-identities.bicep << 'EOF'
-          // User-assigned managed identities for workloads
-          @description('Azure region for all resources')
-          param location string = resourceGroup().location
-
-          @description('Environment name')
-          param environment string = 'production'
-
-          @description('Tags to apply to all resources')
-          param tags object = {
-            environment: environment
-            workload: 'identity'
-            deployment: 'bicep'
-          }
-
-          // Create user-assigned managed identities
-          resource appManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-            name: 'id-app-services'
-            location: location
-            tags: tags
-          }
-
-          resource dataWorkloadIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-            name: 'id-data-workloads'
-            location: location
-            tags: tags
-          }
-
-          resource automationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-            name: 'id-automation'
-            location: location
-            tags: tags
-          }
-
-          // Outputs for reference in other deployments
-          output appIdentityId string = appManagedIdentity.id
-          output appIdentityPrincipalId string = appManagedIdentity.properties.principalId
-
-          output dataWorkloadIdentityId string = dataWorkloadIdentity.id
-          output dataWorkloadPrincipalId string = dataWorkloadIdentity.properties.principalId
-
-          output automationIdentityId string = automationIdentity.id
-          output automationPrincipalId string = automationIdentity.properties.principalId
-          EOF
-          
-          # Create aadds.bicep file
-          echo "Creating aadds.bicep..."
-          cat > modules/aadds.bicep << 'EOF'
-          // Azure AD Domain Services for cloud-only environment
-          @description('Azure region for all resources')
-          param location string = resourceGroup().location
-
-          @description('Environment name')
-          param environment string = 'production'
-
-          @description('Domain name for AADDS')
-          param domainName string = 'aadds.contoso.com'
-
-          @description('SKU for AADDS')
-          @allowed(['Standard', 'Enterprise', 'Premium'])
-          param sku string = 'Standard'
-
-          @description('ID of the identity VNet')
-          param vnetId string
-
-          @description('Name of the subnet for AADDS')
-          param aaddsSubnetName string = 'snet-domain-services'
-
-          @description('Tags to apply to all resources')
-          param tags object = {
-            environment: environment
-            workload: 'identity'
-            deployment: 'bicep'
-          }
-
-          // Extract VNet name from VNet ID
-          var vnetName = split(vnetId, '/')[8]
-
-          // Reference the subnet for AADDS
-          resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
-            name: '${vnetName}/${aaddsSubnetName}'
-          }
-
-          // Create a Network Security Group for AADDS
-          resource aaddsNsg 'Microsoft.Network/networkSecurityGroups@2023-04-01' = {
-            name: 'nsg-aadds'
-            location: location
-            tags: tags
-            properties: {
-              securityRules: [
-                {
-                  name: 'AllowLDAPS'
-                  properties: {
-                    priority: 201
-                    direction: 'Inbound'
-                    access: 'Allow'
-                    protocol: 'Tcp'
-                    sourceAddressPrefix: '*'
-                    sourcePortRange: '*'
-                    destinationAddressPrefix: '*'
-                    destinationPortRange: '636'
-                  }
-                }
-                {
-                  name: 'AllowLDAP'
-                  properties: {
-                    priority: 202
-                    direction: 'Inbound'
-                    access: 'Allow'
-                    protocol: 'Tcp'
-                    sourceAddressPrefix: '*'
-                    sourcePortRange: '*'
-                    destinationAddressPrefix: '*'
-                    destinationPortRange: '389'
-                  }
-                }
-                {
-                  name: 'AllowKerberos'
-                  properties: {
-                    priority: 203
-                    direction: 'Inbound'
-                    access: 'Allow'
-                    protocol: 'Tcp'
-                    sourceAddressPrefix: '*'
-                    sourcePortRange: '*'
-                    destinationAddressPrefix: '*'
-                    destinationPortRange: '88'
-                  }
-                }
-              ]
-            }
-          }
-
-          // Deploy Azure AD Domain Services
-          resource aadds 'Microsoft.AAD/domainServices@2022-12-01' = {
-            name: 'aadds-${environment}'
-            location: location
-            tags: tags
-            properties: {
-              domainName: domainName
-              domainConfigurationType: 'FullySynced'
-              sku: sku
-              replicaSets: [
-                {
-                  subnetId: subnet.id
-                  location: location
-                }
-              ]
-            }
-          }
-
-          // Output AADDS resource ID
-          output aaddsId string = aadds.id
-          output aaddsName string = aadds.name
-          EOF
-          
-          echo "Bicep module files created successfully."
-          ls -la modules/
       
       - name: Deploy identity network
         id: deploy_network
@@ -470,7 +180,7 @@ jobs:
           az deployment group create \
             --name "identity-network-$(date +%Y%m%d%H%M%S)" \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file modules/identity-network.bicep \
+            --template-file landing-zone/modules/identity-network.bicep \
             --parameters environment=${{ env.ENVIRONMENT }} location=${{ env.LOCATION }}
       
       - name: Get VNet ID
@@ -490,7 +200,7 @@ jobs:
   # ==================================================================================
   deploy-key-vault:
     name: Deploy Key Vault
-    needs: deploy-identity-infrastructure
+    needs: deploy-identity-network
     runs-on: ubuntu-latest
     
     steps:
@@ -504,13 +214,13 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.IDENTITY_SUBSCRIPTION_ID }}
       
-      - name: Recreate Bicep module files
+      - name: Create key-vault.bicep
         run: |
-          # Recreate modules directory and Bicep files
-          # (We need to recreate them in each job since GitHub Actions doesn't preserve files between jobs)
-          mkdir -p modules
+          # Create directory structure
+          mkdir -p landing-zone/modules
           
-          cat > modules/key-vault.bicep << 'EOF'
+          # Create key-vault.bicep file with corrected naming
+          cat > landing-zone/modules/key-vault.bicep << 'EOF'
           // Key Vault with private endpoint for identity resources
           @description('Azure region for all resources')
           param location string = resourceGroup().location
@@ -518,8 +228,10 @@ jobs:
           @description('Environment name')
           param environment string = 'production'
 
-          @description('Key Vault name')
-          param keyVaultName string = 'kv-identity-${uniqueString(resourceGroup().id)}'
+          @description('Key Vault name - must follow Azure naming rules')
+          @minLength(3)
+          @maxLength(24)
+          param keyVaultName string
 
           @description('Azure AD tenant ID')
           param tenantId string
@@ -531,7 +243,7 @@ jobs:
           param privateEndpointSubnetName string = 'snet-private-endpoints'
 
           @description('SKU name for Key Vault')
-          param skuName string = 'premium'
+          param skuName string = 'standard'
 
           @description('Tags to apply to all resources')
           param tags object = {
@@ -608,16 +320,19 @@ jobs:
             --name "vnet-identity" \
             --query id -o tsv)
           
-          # Deploy Key Vault using module
+          # Create a guaranteed valid Key Vault name
+          # Format: kv + random 8-character alphanumeric string
+          KV_NAME="kv$(openssl rand -hex 4)"
+          
+          # Deploy Key Vault using module with explicit name
           az deployment group create \
             --name "key-vault-$(date +%Y%m%d%H%M%S)" \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file modules/key-vault.bicep \
+            --template-file landing-zone/modules/key-vault.bicep \
             --parameters environment=${{ env.ENVIRONMENT }} \
                          location=${{ env.LOCATION }} \
                          tenantId=${{ env.AZURE_TENANT_ID }} \
-                         vnetId=$VNET_ID
+                         vnetId=$VNET_ID \
+                         keyVaultName=$KV_NAME
           
-          echo "Key Vault deployed successfully."
-
-# The rest of the jobs follow the same pattern - recreate the bicep files in each job before use
+          echo "Key Vault $KV_NAME deployed successfully."
