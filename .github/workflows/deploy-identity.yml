@@ -2,32 +2,26 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
 #
-# 🚨 YAML SYNTAX TROUBLESHOOTING GUIDE 🚨
-# =======================================================
+# 📝 HEREDOC FORMATTING IN YAML - DEFINITIVE GUIDE 📝
+# ==========================================================
 #
-# 1️⃣ INDENTATION ISSUES
-#    • Each level must use consistent indentation (2 spaces recommended)
-#    • Child elements must be indented under their parent
-#    • Ensure no tabs are accidentally used instead of spaces
+# 🚫 COMMON HEREDOC ERRORS IN YAML:
+#   1. Indentation issues with closing delimiter
+#   2. Missing or unbalanced quotes around opening delimiter
+#   3. Extra spaces or characters before closing delimiter
+#   4. Improper quoting of special characters inside content
 #
-# 2️⃣ QUOTING REQUIREMENTS
-#    • Enclose strings with special characters in quotes: '{{ name }}' or "value: test"
-#    • Use single quotes when string contains: { } characters
-#    • Use double quotes when string contains: ' characters
-#    • Avoid unquoted values that could be interpreted as numbers, booleans, etc.
+# ✅ CORRECT HEREDOC SYNTAX:
+#   cat > file.txt << 'EOF'
+#   content
+#   EOF
 #
-# 3️⃣ COMMON SYNTAX ERRORS
-#    • Missing colon after key: "key: value" not "key value"
-#    • Missing spaces after colon: "key: value" not "key:value" 
-#    • Missing hyphens for list items: "- item" not "item"
-#    • Incorrect block scalars (| or >)
-#    • Unbalanced quotes or brackets
-#
-# 4️⃣ PIPELINE EXPRESSION SYNTAX
-#    • Job-level conditionals: if: needs.job.outputs.result == 'true'
-#    • Step-level conditionals: if: ${{ steps.id.outputs.result == 'true' }}
-#    • Shell script variables: "${{ github.token }}"
-# =======================================================
+# 🔑 CRITICAL RULES:
+#   1. Use quotes for opening delimiter to prevent variable substitution
+#   2. Closing delimiter (EOF) MUST be at beginning of line with NO indentation
+#   3. No trailing spaces or characters after the closing delimiter
+#   4. Content indentation inside heredoc should be intentional
+# ==========================================================
 
 name: Provision Identity
 
@@ -65,7 +59,6 @@ permissions:
   id-token: write  # Required for OIDC federation
   contents: read   # Required to read repo files
 
-# Environment variables for the workflow
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -77,9 +70,9 @@ env:
   DEPLOY_AADDS: ${{ github.event.inputs.deployAadds || 'true' }}
 
 jobs:
-  # ===========================================================================
+  # ==========================================================================
   # VERIFY PREREQUISITES - Entry point job with no dependencies
-  # ===========================================================================
+  # ==========================================================================
   verify-prerequisites:
     name: Verify Prerequisites
     runs-on: ubuntu-latest
@@ -138,9 +131,9 @@ jobs:
           echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
           echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
 
-  # ===========================================================================
+  # ==========================================================================
   # DEPLOY IDENTITY INFRASTRUCTURE
-  # ===========================================================================
+  # ==========================================================================
   deploy-identity-infrastructure:
     name: Deploy Identity Infrastructure
     needs: verify-prerequisites
@@ -171,7 +164,7 @@ jobs:
           echo "Resource group created or confirmed."
       
       # ===========================================================================
-      # CRITICAL FIX: Line 203 YAML syntax error - Heredoc formatting
+      # CRITICAL FIX: Line 195 YAML syntax error - Heredoc formatting
       # Common errors with heredocs:
       # 1. Indentation issues with closing delimiter
       # 2. Missing or mismatched quotes around the opening delimiter
@@ -275,9 +268,9 @@ EOF
           echo "vnet_id=$VNET_ID" >> $GITHUB_OUTPUT
           echo "Identity network deployed successfully."
 
-  # ===========================================================================
+  # ==========================================================================
   # DEPLOY KEY VAULT
-  # ===========================================================================
+  # ==========================================================================
   deploy-key-vault:
     name: Deploy Key Vault
     needs: deploy-identity-infrastructure
@@ -428,9 +421,9 @@ EOF
           
           echo "Key Vault deployed successfully."
 
-  # ===========================================================================
+  # ==========================================================================
   # DEPLOY MANAGED IDENTITIES
-  # ===========================================================================
+  # ==========================================================================
   deploy-managed-identities:
     name: Deploy Managed Identities
     needs: deploy-identity-infrastructure
@@ -509,9 +502,9 @@ EOF
           
           echo "Managed identities deployed successfully."
 
-  # ===========================================================================
+  # ==========================================================================
   # DEPLOY AZURE AD DOMAIN SERVICES
-  # ===========================================================================
+  # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
     needs: [verify-prerequisites, deploy-identity-infrastructure]
@@ -666,9 +659,9 @@ EOF
           echo "Azure AD Domain Services deployment initiated."
           echo "Note: AADDS deployment can take 1-2 hours to complete."
 
-  # ===========================================================================
+  # ==========================================================================
   # VERIFY IDENTITY RESOURCES
-  # ===========================================================================
+  # ==========================================================================
   verify-identity-resources:
     name: Verify Identity Resources
     needs: [deploy-key-vault, deploy-managed-identities, verify-prerequisites]
@@ -750,7 +743,7 @@ EOF
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time (UTC):** 2025-06-08 17:20:55
+          **Date/Time (UTC):** 2025-06-08 17:25:27
           
           ## 📊 Deployed Resources
           
@@ -761,16 +754,25 @@ EOF
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 🛠️ YAML Troubleshooting Reference
+          ## 📋 Heredoc Troubleshooting Guide
           
-          ```yaml
-          # Heredoc correctly formatted (fix for line 203 error):
+          ```bash
+          # ✅ CORRECT - EOF delimiter at start of line
           cat > file.txt << 'EOF'
-          content line 1
-          content line 2
-          EOF  # must be at start of line with no spaces
+          content
+          EOF
+          
+          # ❌ WRONG - Indented EOF delimiter
+          cat > file.txt << 'EOF'
+          content
+            EOF  # Indented - will cause error!
+          
+          # ❌ WRONG - Missing EOF delimiter
+          cat > file.txt << 'EOF'
+          content
+          # No EOF delimiter - will cause error!
           ```
           
           Deployment by: GEP-V  
-          Report generated: 2025-06-08 17:20:55 UTC
+          Report generated: 2025-06-08 17:25:27 UTC
           EOF
