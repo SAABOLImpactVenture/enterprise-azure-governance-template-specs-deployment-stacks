@@ -2,28 +2,26 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==================================================================================
 #
-# 🔍 ADVANCED HEREDOC AND BICEP CODE IN GITHUB ACTIONS 🔍
+# 📝 MASTERING BICEP AND HEREDOCS IN GITHUB ACTIONS 📝
 # ========================================================
 #
-# 1️⃣ UNDERSTANDING THE PIPELINE OF PARSERS
-#    • GitHub Actions YAML parser processes the entire file first
-#    • Only after YAML parsing is the script content passed to the shell
-#    • Special characters that have meaning in YAML (@, :, {, }, etc.) must be properly contained
+# 🚨 THE THREE CRITICAL RULES FOR BICEP IN GITHUB ACTIONS:
 #
-# 2️⃣ CORRECT USE OF BICEP IN GITHUB ACTIONS:
-#    • NEVER include Bicep code directly in YAML - it has syntax that conflicts with YAML
-#    • ALWAYS use heredocs with shell scripts to write Bicep to files first
-#    • REMEMBER: Only after GitHub processes the YAML does the shell process the heredoc
+#  1️⃣ RULE OF CONTAINMENT:
+#     • ALL Bicep code must be contained inside heredocs
+#     • NEVER allow Bicep annotations (@description, etc.) directly in YAML
+#     • Remember: YAML parser runs first, then shell, then Bicep compiler
 #
-# 3️⃣ THE LINE 192 ERROR - FIX EXPLAINED:
-#    • Problem: Bicep @description syntax was directly in YAML, not in a heredoc
-#    • Cause: The parameter declaration was outside the heredoc block
-#    • Solution: Move all Bicep code inside a properly formatted heredoc
+#  2️⃣ RULE OF HEREDOC FORMATTING:
+#     • Opening: cat > file.bicep << 'EOF' (quotes prevent variable expansion)
+#     • Content: Can be indented for readability in YAML file
+#     • Closing: EOF must be at column 0 (NO indentation whatsoever)
+#     • No comments or characters on the same line as closing EOF
 #
-# 4️⃣ HEREDOC BEST PRACTICES:
-#    • Use 'EOF' with quotes to prevent variable expansion
-#    • Ensure the closing EOF is at column 0 (absolutely no indentation)
-#    • Make sure all Bicep code is contained between heredoc markers
+#  3️⃣ RULE OF SEQUENCE:
+#     • YAML syntax is parsed BEFORE any shell commands run
+#     • Bicep code is only created when shell executes the heredoc
+#     • Any Bicep syntax outside heredocs will cause YAML parsing errors
 # ========================================================
 
 name: Provision Identity
@@ -176,8 +174,8 @@ jobs:
             echo "Creating identity network template..."
             mkdir -p identity/network
             
-            # CRITICAL FIX FOR LINE 192: 
-            # 1. All Bicep code must be inside heredoc (including the @description lines)
+            # CRITICAL FIX FOR LINE 185: 
+            # 1. All Bicep code must be inside heredoc (including the @description annotations)
             # 2. Closing EOF delimiter must be at column 0 with no indentation
             # 3. Use single quotes around EOF to prevent variable substitution
             cat > identity/network/identity-network.bicep << 'EOF'
@@ -316,7 +314,7 @@ EOF
           # Check if Key Vault template exists
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
             mkdir -p identity/key-vault
-            # Using same correct heredoc pattern
+            # Using same correct heredoc pattern - EOF at column 0
             cat > identity/key-vault/key-vault.bicep << 'EOF'
 // Key Vault with private endpoint for identity resources
 @description('Azure region for all resources')
@@ -743,7 +741,7 @@ EOF
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time (UTC):** 2025-06-08 17:46:43
+          **Date/Time (UTC):** 2025-06-08 17:51:16
           
           ## 📊 Deployed Resources
           
@@ -754,41 +752,33 @@ EOF
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📚 UNDERSTANDING BICEP & YAML SYNTAX ERRORS
+          ## 📝 YAML AND BICEP INTEGRATION GUIDE
           
-          The workflow had a critical error on line 192 where Bicep code with `@description` syntax was interpreted as YAML. This happens because of the **processing pipeline**:
-
-          1. **GitHub Actions YAML Parser** → Reads the entire workflow file
-          2. **Shell interpreter** → Only runs after YAML is successfully parsed
-          3. **Bicep compiler** → Only runs when the shell executes the deployment
-
-          ### 🔍 Problem Visualization
+          ### The Problem on Line 185
+          
+          This workflow was failing because of an error on line 185. The issue was **Bicep code leaking into YAML syntax**:
           
           ```yaml
-          # ❌ WRONG: Bicep syntax directly in YAML
-          steps:
-            - run: |
-                cat > file.bicep << 'EOF'
-                param location string = resourceGroup().location
-                EOF
-                
-              # This line is outside the heredoc - YAML parser tries to interpret it!
-              @description('Azure region')  # ERROR - @ symbol has special meaning in YAML
-          
-          # ✅ CORRECT: All Bicep code inside heredoc
-          steps:
-            - run: |
-                cat > file.bicep << 'EOF'
-                @description('Azure region')  # Now safely inside heredoc 
-                param location string = resourceGroup().location
-                EOF
+          # Line 185 error - Bicep annotation outside heredoc
+          @description('Azure region for all resources')  # ❌ YAML parser sees @ symbol
           ```
           
-          ### Remember:
-          - Bicep's `@` and `{ }` characters have special meaning in YAML
-          - The YAML parser runs before any shell commands execute
-          - Heredocs must be properly formed with EOF at column 0
+          ### Understanding the Processing Pipeline:
           
-          Deployment by: GEP-V  
-          Report generated: 2025-06-08 17:46:43 UTC
+          1. **GitHub Actions YAML parser** processes your workflow file
+          2. **If valid YAML**, the shell scripts are executed
+          3. **Only then** does any Bicep code get written to files
+          
+          ### Three Rules for Success:
+          
+          1. **Complete Containment**: ALL Bicep code MUST be inside heredocs
+          2. **Proper Heredoc Formatting**: 
+             - Opening: `cat > file.bicep << 'EOF'`
+             - Closing: `EOF` (at column 0, no indentation)
+          3. **Prevent Variable Expansion**: Use quotes around 'EOF'
+          
+          By following these rules, you keep Bicep syntax completely isolated from YAML, preventing any parsing conflicts.
+          
+          Deployment by: GEP-V
+          Report generated: 2025-06-08 17:51:16 UTC
           EOF
