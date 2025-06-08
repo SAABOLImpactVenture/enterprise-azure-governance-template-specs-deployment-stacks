@@ -4,23 +4,25 @@
 # PROMPT ENGINEERING GUIDANCE:
 # This workflow provisions core identity resources for a cloud-only enterprise landing zone.
 #
-# GITHUB ACTIONS CONDITIONAL SYNTAX GUIDE:
-# ----------------------------------------
-# JOB-LEVEL CONDITIONALS ★
-#   CORRECT: if: env.DEPLOY_AADDS == 'true'                 (no braces)
-#   WRONG:   if: ${{ env.DEPLOY_AADDS == 'true' }}          (has braces)
+# 🚨 GITHUB ACTIONS CONDITIONAL SYNTAX RULES 🚨
+# =============================================
+# Different contexts require different syntax patterns:
 #
-# STEP-LEVEL CONDITIONALS ★
-#   CORRECT: if: ${{ steps.my_step.outputs.value == 'success' }}   (has braces)
-#   WRONG:   if: steps.my_step.outputs.value == 'success'          (no braces)
+# 1️⃣ JOB-LEVEL CONDITIONALS:
+#    ✅ if: env.DEPLOY_AADDS == 'true'           (CORRECT: no curly braces)
+#    ❌ if: ${{ env.DEPLOY_AADDS == 'true' }}    (WRONG: has curly braces)
 #
-# SHELL SCRIPTS ★
-#   CORRECT: if [ "${{ env.MY_VAR }}" == "true" ]           (has braces)
-#   WRONG:   if [ "env.MY_VAR" == "true" ]                  (no braces)
+# 2️⃣ STEP-LEVEL CONDITIONALS:
+#    ✅ if: ${{ steps.check.outputs.result == 'success' }}    (CORRECT: has curly braces)
+#    ❌ if: steps.check.outputs.result == 'success'           (WRONG: no curly braces)
 #
-# WORKFLOW STRUCTURE ★
-#   - At least one job MUST have no dependencies (no "needs" parameter)
-# ----------------------------------------
+# 3️⃣ SHELL SCRIPT VARIABLES:
+#    ✅ if [ "${{ env.DEPLOY_AADDS }}" == "true" ]    (CORRECT: has curly braces)
+#    ❌ if [ "env.DEPLOY_AADDS" == "true" ]           (WRONG: no curly braces)
+#
+# 4️⃣ WORKFLOW STRUCTURE:
+#    ✅ At least one job MUST have no dependencies (no "needs" parameter)
+# =============================================
 
 name: Provision Identity
 
@@ -80,7 +82,9 @@ jobs:
     name: Verify Prerequisites
     # No "needs" parameter here - this is the workflow entry point
     runs-on: ubuntu-latest
-    
+    outputs:
+      tenant_id: ${{ steps.output_params.outputs.tenant_id }}
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -125,6 +129,11 @@ jobs:
           fi
           
           echo "Azure connectivity verified successfully."
+          
+      - name: Set output parameters
+        id: output_params
+        run: |
+          echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
 
   # ==========================================================================
   # DEPLOY IDENTITY INFRASTRUCTURE JOB
@@ -137,6 +146,8 @@ jobs:
     name: Deploy Identity Infrastructure
     needs: verify-prerequisites
     runs-on: ubuntu-latest
+    outputs:
+      vnet_id: ${{ steps.vnet_output.outputs.vnet_id }}
     
     steps:
       - name: Checkout repository
@@ -243,13 +254,17 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --template-file identity/network/identity-network.bicep \
             --parameters environment=${{ env.ENVIRONMENT }} location=${{ env.LOCATION }}
-          
+      
+      - name: Get VNet ID
+        id: vnet_output
+        run: |
           # Get the VNet ID
           VNET_ID=$(az network vnet show \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name "vnet-identity" \
             --query id -o tsv)
           
+          echo "vnet_id=$VNET_ID" >> $GITHUB_OUTPUT
           echo "Identity network deployed successfully."
 
   # ==========================================================================
@@ -503,13 +518,13 @@ jobs:
   # PROMPT GUIDANCE:
   # - Azure AD DS provides managed domain services for a cloud-only environment
   # - Only deployed if specifically requested (costly service)
-  # - CRITICAL FIX ON LINE 521: Job-level conditionals MUST use simplified syntax
+  # - CRITICAL FIX ON LINE 513: Job-level conditionals MUST use simplified syntax
   # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
     needs: deploy-identity-infrastructure
     runs-on: ubuntu-latest
-    # FIXED: Job-level conditionals use simplified syntax WITHOUT ${{ }} braces
+    # ⚠️ CRITICAL FIX: Job-level conditionals use simplified syntax WITHOUT ${{ }} braces
     if: env.DEPLOY_AADDS == 'true'
     
     steps:
@@ -656,7 +671,7 @@ jobs:
             --parameters environment=${{ env.ENVIRONMENT }} \
                          location=${{ env.LOCATION }} \
                          vnetId=$VNET_ID \
-                         domainName="aadds.${{ env.AZURE_TENANT_ID }}.onmicrosoft.com"
+                         domainName="aadds.${{ needs.verify-prerequisites.outputs.tenant_id }}.onmicrosoft.com"
           
           echo "Azure AD Domain Services deployment initiated."
           echo "Note: AADDS deployment can take 1-2 hours to complete."
@@ -760,13 +775,20 @@ jobs:
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ env.DEPLOY_AADDS }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## GitHub Actions Syntax Quick Reference
+          ## GitHub Actions Conditional Syntax Reference
           
-          | Context | Correct Syntax | Example |
-          |---------|---------------|---------|
-          | Job-level if | \`if: env.VAR == 'value'\` | \`if: env.DEPLOY_AADDS == 'true'\` |
-          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | \`if: \${{ steps.check.outputs.enabled == 'true' }}\` |
-          | Shell scripts | \`if [ "\${{ env.VAR }}" == "value" ]\` | \`if [ "\${{ env.DEPLOY_AADDS }}" == "true" ]\` |
+          | Context | Correct Example | Incorrect Example |
+          |---------|----------------|------------------|
+          | Job-level if | \`if: env.VAR == 'true'\` | \`if: \${{ env.VAR == 'true' }}\` |
+          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | \`if: steps.id.outputs.value == 'true'\` |
+          | Shell scripts | \`if [ "\${{ env.VAR }}" == "true" ]\` | \`if [ "env.VAR" == "true" ]\` |
+          
+          ## Next Steps
+          
+          1. Confirm Azure AD Domain Services deployment (takes 1-2 hours)
+          2. Configure domain join settings for VMs
+          3. Set up Key Vault access policies for applications
+          4. Assign appropriate roles to managed identities
           
           Deployment completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
