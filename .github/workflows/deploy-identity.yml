@@ -9,13 +9,12 @@
 # - User-assigned managed identities for workload authentication
 # - Private DNS integration with connectivity subscription
 #
-# WORKFLOW TROUBLESHOOTING:
-# Common errors and solutions:
-# 1. Invalid expression syntax: Always wrap env contexts in ${{ }}
-# 2. Job dependencies: Ensure proper "needs" parameter for execution order
-# 3. Duplicate resource names: Check for naming conflicts across subscriptions
-# 4. Insufficient permissions: Service principal needs proper RBAC assignments
-# 5. Network connectivity: VNet peering requires NetworkContributor on both networks
+# SYNTAX ERROR PREVENTION:
+# 1. CRITICAL: All environment variables in conditionals must use ${{ env.VAR }} syntax
+#    - CORRECT: if: ${{ env.DEPLOY_AADDS == 'true' }}
+#    - WRONG: if: env.DEPLOY_AADDS == 'true'  <- This will cause errors!
+# 2. Check ALL conditionals in the workflow - errors can occur in any job or step
+# 3. This includes both job-level and step-level conditionals
 
 name: Deploy Identity Resources
 
@@ -60,7 +59,8 @@ permissions:
 # - Identity subscription should be separate from other workloads
 # - IDENTITY_SUBSCRIPTION_ID must exist as a repository secret
 # - CONNECTIVITY_SUBSCRIPTION_ID needed for DNS integration
-# - The service principal requires appropriate RBAC in all subscriptions
+# - The service principal requires appropriate RBAC in the identity subscription
+# - Consider using Azure PIM for Eligible roles rather than permanent assignment
 # ==========================================================================
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -115,6 +115,11 @@ jobs:
           fi
           
           echo "All required secrets are configured."
+          
+          # Determine subscription to use
+          SUB_ID="${{ secrets.IDENTITY_SUBSCRIPTION_ID }}"
+          echo "Using subscription ID: ${SUB_ID:0:8}..."
+          echo "SUBSCRIPTION_ID=$SUB_ID" >> $GITHUB_ENV
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -134,6 +139,20 @@ jobs:
           fi
           
           echo "Azure connectivity verified successfully."
+      
+      - name: Check for Identity VNet
+        run: |
+          # Look for existing identity VNet
+          echo "Checking for existing identity VNet..."
+          
+          IDENTITY_VNET=$(az network vnet list \
+            --query "[?contains(name, 'identity')].name" -o tsv 2>/dev/null || echo "")
+          
+          if [ -n "$IDENTITY_VNET" ]; then
+            echo "Found existing identity VNet: $IDENTITY_VNET"
+          else
+            echo "No existing identity VNet found. A new one will be deployed."
+          fi
 
   # ==========================================================================
   # DEPLOY IDENTITY INFRASTRUCTURE JOB
@@ -143,6 +162,7 @@ jobs:
   # - Network integration with hub VNet is critical
   # - Resource group implementation follows enterprise naming standards
   # - Consistent tagging strategy enables better governance
+  # - Use parameters files for consistent configuration across environments
   # ==========================================================================
   deploy-identity-infrastructure:
     name: Deploy Identity Infrastructure
@@ -313,9 +333,71 @@ jobs:
           echo "VNET_ID=$VNET_ID" >> $GITHUB_OUTPUT
           echo "Identity network deployed successfully."
 
+      - name: Deploy Log Analytics workspace
+        run: |
+          echo "Deploying Log Analytics workspace..."
+          
+          # Check if Log Analytics template exists
+          if [ ! -f "identity/monitoring/log-analytics.bicep" ]; then
+            echo "::warning::log-analytics.bicep not found. Creating minimal template."
+            
+            # Create a minimal Log Analytics Bicep file if it doesn't exist
+            mkdir -p identity/monitoring
+            cat > identity/monitoring/log-analytics.bicep << 'EOF'
+            // Log Analytics for identity monitoring
+            @description('Azure region for all resources')
+            param location string = resourceGroup().location
+
+            @description('Environment name')
+            param environment string = 'production'
+
+            @description('Log Analytics workspace name')
+            param workspaceName string = 'law-identity'
+
+            @description('Log retention in days')
+            param retentionInDays int = 30
+
+            @description('Tags to apply to all resources')
+            param tags object = {
+              environment: environment
+              workload: 'identity'
+              deployment: 'bicep'
+            }
+
+            // Create Log Analytics workspace
+            resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+              name: workspaceName
+              location: location
+              tags: tags
+              properties: {
+                sku: {
+                  name: 'PerGB2018'
+                }
+                retentionInDays: retentionInDays
+                features: {
+                  enableLogAccessUsingOnlyResourcePermissions: true
+                }
+              }
+            }
+
+            // Output the workspace ID and primary key for use in diagnostics
+            output workspaceId string = logAnalytics.id
+            output workspaceName string = logAnalytics.name
+            EOF
+          fi
+          
+          # Deploy Log Analytics workspace
+          az deployment group create \
+            --name "log-analytics-$(date +%Y%m%d%H%M%S)" \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --template-file identity/monitoring/log-analytics.bicep \
+            --parameters environment=${{ env.ENVIRONMENT }} location=${{ env.LOCATION }}
+          
+          echo "Log Analytics workspace deployed successfully."
+      
       # Set up VNet peering if connectivity subscription is available
+      # SYNTAX FIX: Proper environment variable reference in conditional
       - name: Set up VNet peering to hub
-        # CRITICAL: Environment variables in conditions must use ${{ }} syntax
         if: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID != '' }}
         run: |
           echo "Setting up VNet peering to hub network..."
@@ -392,6 +474,7 @@ jobs:
   # - Access policies align with least-privilege principles
   # - RBAC or Access Policy mode based on enterprise requirements
   # - HSM protection for production secrets
+  # - Private DNS integration for internal resolution
   # ==========================================================================
   deploy-key-vault:
     name: Deploy Key Vault
@@ -502,6 +585,21 @@ jobs:
               }
             }
 
+            // Create private DNS zone group
+            resource privateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-04-01' = {
+              name: '${privateEndpoint.name}/default'
+              properties: {
+                privateDnsZoneConfigs: [
+                  {
+                    name: 'private-dns-config'
+                    properties: {
+                      privateDnsZoneId: resourceId(subscription().subscriptionId, resourceGroup().name, 'Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net')
+                    }
+                  }
+                ]
+              }
+            }
+
             // Output Key Vault resource ID
             output keyVaultId string = keyVault.id
             output keyVaultName string = keyVault.name
@@ -540,9 +638,9 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --template-file identity/key-vault/key-vault.bicep \
             --parameters environment=${{ env.ENVIRONMENT }} \
-                       location=${{ env.LOCATION }} \
-                       tenantId=${{ env.AZURE_TENANT_ID }} \
-                       vnetId=$VNET_ID
+                         location=${{ env.LOCATION }} \
+                         tenantId=${{ env.AZURE_TENANT_ID }} \
+                         vnetId=$VNET_ID
           
           echo "Key Vault deployed successfully."
 
@@ -554,13 +652,13 @@ jobs:
   # - Only deployed if specifically requested (costly service)
   # - Requires careful network configuration and security groups
   # - SKU selection based on directory size and performance needs
-  # - CRITICAL FIX: Always wrap env variables in ${{ }} in conditionals
+  # - CRITICAL FIX: Always use ${{ }} syntax for environment variables in conditionals
   # ==========================================================================
   deploy-aadds:
     name: Deploy Azure AD Domain Services
     needs: [deploy-identity-infrastructure, deploy-key-vault]
     runs-on: ubuntu-latest
-    # FIXED: Using proper expression syntax for environment variable in conditional
+    # SYNTAX FIX: Proper environment variable reference in conditional
     if: ${{ env.DEPLOY_AADDS == 'true' }}
     
     steps:
@@ -749,9 +847,9 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --template-file identity/aadds/aadds.bicep \
             --parameters environment=${{ env.ENVIRONMENT }} \
-                       location=${{ env.LOCATION }} \
-                       vnetId=$VNET_ID \
-                       domainName="aadds.${{ env.AZURE_TENANT_ID }}.onmicrosoft.com"
+                         location=${{ env.LOCATION }} \
+                         vnetId=$VNET_ID \
+                         domainName="aadds.${{ env.AZURE_TENANT_ID }}.onmicrosoft.com"
           
           echo "Azure AD Domain Services deployment initiated."
           echo "Note: AADDS deployment can take 1-2 hours to complete."
@@ -858,7 +956,7 @@ jobs:
   verify-identity-resources:
     name: Verify Identity Resources
     needs: [deploy-key-vault, deploy-managed-identities]
-    if: always()  # Run even if previous jobs fail to report status
+    if: always()
     runs-on: ubuntu-latest
     
     steps:
@@ -922,6 +1020,7 @@ jobs:
             echo "❌ Managed identities not found"
           fi
           
+          # SYNTAX FIX: Proper environment variable reference in conditional
           # Check for AADDS if deployed
           if [ "${{ env.DEPLOY_AADDS }}" == "true" ]; then
             if az resource list \
@@ -935,15 +1034,16 @@ jobs:
             fi
           fi
           
-          # Generate summary report with GitHub Actions summary feature
+          # Generate summary report for GitHub Actions summary
           cat << EOF > $GITHUB_STEP_SUMMARY
           # Identity Resources Deployment Results
           
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
+          **Date/Time UTC:** $(date -u +"%Y-%m-%d %H:%M:%S")
           
-          ## Deployed Resources Summary
+          ## Deployed Resources
           
           | Resource Type | Status |
           |--------------|--------|
@@ -958,22 +1058,23 @@ jobs:
              - Ensure all spoke networks are peered with the identity network
              - Configure NSGs for appropriate access control
           
-          2. **Azure AD Domain Services** (if deployed)
+          2. **Azure AD Domain Services**
              - Complete domain configuration in Azure portal
              - Set up administrative users and groups
              - Configure LDAPS certificates if needed
           
           3. **Key Vault Access**
              - Grant appropriate access to applications and users
-             - Store secrets, keys, and certificates
+             - Store identity-related secrets, keys, and certificates
           
           4. **Managed Identities**
              - Assign appropriate RBAC roles to managed identities
-             - Use managed identities in your applications
+             - Update applications to use managed identities
           
-          ## Security Considerations
+          ## Deployment Notes
           
-          - ✅ Use Private Endpoints for all PaaS services
-          - ⚠️ Implement Azure Policy for governance
-          - ⚠️ Configure Azure Monitor alerts for identity events
+          - Cloud-only environment with no on-premises connectivity
+          - Private endpoints used for secure service access
+          - VNet peering established with hub network (if available)
+          - Log Analytics workspace configured for monitoring
           EOF
