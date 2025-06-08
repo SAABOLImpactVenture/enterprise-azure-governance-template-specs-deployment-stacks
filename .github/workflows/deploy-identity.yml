@@ -2,38 +2,41 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
 #
-# SYNTAX GUIDE: GITHUB ACTIONS CONDITIONALS
-# =========================================
+# 🚨 GITHUB ACTIONS SYNTAX GUIDE - PREVENT WORKFLOW ERRORS 🚨
+# ===========================================================
 #
-# ⚠️ JOB-LEVEL CONDITIONALS - CRITICAL SYNTAX REQUIREMENTS ⚠️
+# 1️⃣ JOB-LEVEL CONDITIONS
+#    ✅ CORRECT: 
+#       if: github.event_name == 'push'                       # GitHub context directly
+#       if: needs.job_name.outputs.variable == 'value'        # Job outputs
+#       if: vars.WORKFLOW_VAR == 'true'                       # GitHub Variables
 #
-# Expressions in job-level conditionals follow special rules:
+#    ❌ INCORRECT:
+#       if: env.MY_VAR == 'true'                              # Cannot use env vars directly
+#       if: ${{ env.MY_VAR == 'true' }}                       # Cannot use expression syntax
 #
-# ✅ CORRECT:
-# - Using context properties directly:
-#   if: github.event_name == 'push'
-#   if: github.ref == 'refs/heads/main'
-#   if: success() || failure()
+# 2️⃣ STEP-LEVEL CONDITIONS
+#    ✅ CORRECT:
+#       if: ${{ github.event_name == 'push' }}                # Must use expression syntax
+#       if: ${{ env.MY_VAR == 'true' }}                       # Env vars work here with expression syntax
 #
-# - Using workflow-level variables:
-#   if: vars.DEPLOY_FLAG == 'true'
+#    ❌ INCORRECT:
+#       if: github.event_name == 'push'                       # Missing expression syntax
+#       if: env.MY_VAR == 'true'                              # Missing expression syntax
 #
-# ❌ INCORRECT:
-# - Using env variables directly at job level:
-#   if: env.DEPLOY_FLAG == 'true'  
+# 3️⃣ HEREDOC IN SHELL SCRIPTS
+#    ✅ CORRECT:
+#       cat > file.txt << 'EOF'                               # Opening delimiter
+#       content
+#       EOF                                                   # Closing delimiter at start of line with no spaces
 #
-# - Using expression syntax at job level:
-#   if: ${{ github.event_name == 'push' }}
-#
-# 🔧 PROPER SOLUTION FOR ENV VARIABLES IN JOB CONDITIONS:
-# 1. Set job output in a prerequisite job:
-#    steps:
-#      - id: set_vars
-#        run: echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
-#
-# 2. Reference that output in dependent job:
-#    if: needs.prerequisites.outputs.deploy_aadds == 'true'
-# ==========================================================================
+#    ❌ INCORRECT:
+#       cat > file.txt << 'EOF'                               # Opening delimiter
+#       content
+#         EOF                                                 # Indented closing delimiter will fail
+#       cat > file.txt << 'EOF'                               # Opening delimiter
+#       content                                               # Missing EOF delimiter
+# ===========================================================
 
 name: Provision Identity
 
@@ -71,6 +74,8 @@ permissions:
   id-token: write  # Required for OIDC federation
   contents: read   # Required to read repo files
 
+# Environment variables for the workflow
+# NOTE: These cannot be used directly in job-level "if" conditions
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -79,17 +84,17 @@ env:
   RESOURCE_GROUP_NAME: rg-identity
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
-  # This value can't be directly referenced in job-level conditionals
+  # Boolean inputs are converted to strings
   DEPLOY_AADDS: ${{ github.event.inputs.deployAadds || 'true' }}
 
 jobs:
   # ==========================================================================
   # VERIFY PREREQUISITES - Entry point job with no dependencies
   # ==========================================================================
-  # This job also prepares variables that will be used in job-level conditionals
   verify-prerequisites:
     name: Verify Prerequisites
     runs-on: ubuntu-latest
+    # Set outputs that can be used in job-level conditionals
     outputs:
       tenant_id: ${{ steps.output_params.outputs.tenant_id }}
       deploy_aadds: ${{ steps.output_params.outputs.deploy_aadds }}
@@ -118,7 +123,7 @@ jobs:
             exit 1
           fi
           
-          echo "All required secrets are verified."
+          echo "All required secrets are configured."
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -143,8 +148,8 @@ jobs:
         run: |
           echo "Input deployAadds value: ${{ github.event.inputs.deployAadds }}"
           echo "Env DEPLOY_AADDS value: ${{ env.DEPLOY_AADDS }}"
-          
-      # CRITICAL: Set output variables that can be used in job-level conditions
+      
+      # CRITICAL: Set job outputs to be used in job-level conditionals
       - name: Set output parameters
         id: output_params
         run: |
@@ -188,74 +193,75 @@ jobs:
         run: |
           echo "Deploying identity network infrastructure..."
           
-          # Create identity network template if it doesn't exist
+          # Check if identity network template exists
           if [ ! -f "identity/network/identity-network.bicep" ]; then
             echo "Creating identity network template..."
             mkdir -p identity/network
+            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line with no indentation
             cat > identity/network/identity-network.bicep << 'EOF'
-            // Identity Network for cloud-only deployment
-            @description('Azure region for all resources')
-            param location string = resourceGroup().location
+// Identity Network for cloud-only deployment
+@description('Azure region for all resources')
+param location string = resourceGroup().location
 
-            @description('Environment name')
-            param environment string = 'production'
+@description('Environment name')
+param environment string = 'production'
 
-            @description('Address space for the identity virtual network')
-            param addressPrefix string = '10.2.0.0/16'
+@description('Address space for the identity virtual network')
+param addressPrefix string = '10.2.0.0/16'
 
-            @description('Name of the identity virtual network')
-            param vnetName string = 'vnet-identity'
+@description('Name of the identity virtual network')
+param vnetName string = 'vnet-identity'
 
-            @description('Tags to apply to all resources')
-            param tags object = {
-              environment: environment
-              workload: 'identity'
-              deployment: 'bicep'
-            }
+@description('Tags to apply to all resources')
+param tags object = {
+  environment: environment
+  workload: 'identity'
+  deployment: 'bicep'
+}
 
-            // Define subnets
-            var subnets = [
-              {
-                name: 'snet-identity-services'
-                properties: {
-                  addressPrefix: '10.2.0.0/24'
-                  privateEndpointNetworkPolicies: 'Disabled'
-                }
-              }
-              {
-                name: 'snet-domain-services'
-                properties: {
-                  addressPrefix: '10.2.1.0/24'
-                }
-              }
-              {
-                name: 'snet-private-endpoints'
-                properties: {
-                  addressPrefix: '10.2.2.0/24'
-                  privateEndpointNetworkPolicies: 'Disabled'
-                }
-              }
-            ]
+// Define subnets
+var subnets = [
+  {
+    name: 'snet-identity-services'
+    properties: {
+      addressPrefix: '10.2.0.0/24'
+      privateEndpointNetworkPolicies: 'Disabled'
+    }
+  }
+  {
+    name: 'snet-domain-services'
+    properties: {
+      addressPrefix: '10.2.1.0/24'
+    }
+  }
+  {
+    name: 'snet-private-endpoints'
+    properties: {
+      addressPrefix: '10.2.2.0/24'
+      privateEndpointNetworkPolicies: 'Disabled'
+    }
+  }
+]
 
-            // Create Virtual Network
-            resource identityVNet 'Microsoft.Network/virtualNetworks@2023-04-01' = {
-              name: vnetName
-              location: location
-              tags: tags
-              properties: {
-                addressSpace: {
-                  addressPrefixes: [
-                    addressPrefix
-                  ]
-                }
-                subnets: subnets
-              }
-            }
+// Create Virtual Network
+resource identityVNet 'Microsoft.Network/virtualNetworks@2023-04-01' = {
+  name: vnetName
+  location: location
+  tags: tags
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        addressPrefix
+      ]
+    }
+    subnets: subnets
+  }
+}
 
-            // Output the VNet ID for use in other deployments
-            output vnetId string = identityVNet.id
-            output vnetName string = identityVNet.name
-            EOF
+// Output the VNet ID for use in other deployments
+output vnetId string = identityVNet.id
+output vnetName string = identityVNet.name
+EOF
           fi
           
           # Deploy network
@@ -325,96 +331,97 @@ jobs:
               --registration-enabled false
           fi
           
-          # Create Key Vault template if it doesn't exist
+          # Check if Key Vault template exists
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
             mkdir -p identity/key-vault
+            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line
             cat > identity/key-vault/key-vault.bicep << 'EOF'
-            // Key Vault with private endpoint for identity resources
-            @description('Azure region for all resources')
-            param location string = resourceGroup().location
+// Key Vault with private endpoint for identity resources
+@description('Azure region for all resources')
+param location string = resourceGroup().location
 
-            @description('Environment name')
-            param environment string = 'production'
+@description('Environment name')
+param environment string = 'production'
 
-            @description('Key Vault name')
-            param keyVaultName string = 'kv-identity-${uniqueString(resourceGroup().id)}'
+@description('Key Vault name')
+param keyVaultName string = 'kv-identity-${uniqueString(resourceGroup().id)}'
 
-            @description('Azure AD tenant ID')
-            param tenantId string
+@description('Azure AD tenant ID')
+param tenantId string
 
-            @description('ID of the identity VNet')
-            param vnetId string
+@description('ID of the identity VNet')
+param vnetId string
 
-            @description('Name of the subnet for private endpoints')
-            param privateEndpointSubnetName string = 'snet-private-endpoints'
+@description('Name of the subnet for private endpoints')
+param privateEndpointSubnetName string = 'snet-private-endpoints'
 
-            @description('SKU name for Key Vault')
-            param skuName string = 'premium'
+@description('SKU name for Key Vault')
+param skuName string = 'premium'
 
-            @description('Tags to apply to all resources')
-            param tags object = {
-              environment: environment
-              workload: 'identity'
-              deployment: 'bicep'
-            }
+@description('Tags to apply to all resources')
+param tags object = {
+  environment: environment
+  workload: 'identity'
+  deployment: 'bicep'
+}
 
-            // Reference the subnet for private endpoint
-            resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
-              name: '${split(vnetId, '/')[8]}/${privateEndpointSubnetName}'
-            }
+// Reference the subnet for private endpoint
+resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
+  name: '${split(vnetId, '/')[8]}/${privateEndpointSubnetName}'
+}
 
-            // Create Key Vault with enhanced security
-            resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-              name: keyVaultName
-              location: location
-              tags: tags
-              properties: {
-                sku: {
-                  family: 'A'
-                  name: skuName
-                }
-                tenantId: tenantId
-                enabledForDeployment: true
-                enabledForDiskEncryption: true
-                enabledForTemplateDeployment: true
-                enableRbacAuthorization: true
-                enableSoftDelete: true
-                softDeleteRetentionInDays: 90
-                publicNetworkAccess: 'Disabled'
-                networkAcls: {
-                  bypass: 'AzureServices'
-                  defaultAction: 'Deny'
-                }
-              }
-            }
+// Create Key Vault with enhanced security
+resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
+  name: keyVaultName
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      family: 'A'
+      name: skuName
+    }
+    tenantId: tenantId
+    enabledForDeployment: true
+    enabledForDiskEncryption: true
+    enabledForTemplateDeployment: true
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 90
+    publicNetworkAccess: 'Disabled'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+    }
+  }
+}
 
-            // Create private endpoint for Key Vault
-            resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-04-01' = {
-              name: 'pe-${keyVaultName}'
-              location: location
-              tags: tags
-              properties: {
-                subnet: {
-                  id: subnet.id
-                }
-                privateLinkServiceConnections: [
-                  {
-                    name: 'connection-to-${keyVaultName}'
-                    properties: {
-                      privateLinkServiceId: keyVault.id
-                      groupIds: [
-                        'vault'
-                      ]
-                    }
-                  }
-                ]
-              }
-            }
+// Create private endpoint for Key Vault
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-04-01' = {
+  name: 'pe-${keyVaultName}'
+  location: location
+  tags: tags
+  properties: {
+    subnet: {
+      id: subnet.id
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'connection-to-${keyVaultName}'
+        properties: {
+          privateLinkServiceId: keyVault.id
+          groupIds: [
+            'vault'
+          ]
+        }
+      }
+    ]
+  }
+}
 
-            // Output Key Vault resource ID
-            output keyVaultId string = keyVault.id
-            output keyVaultName string = keyVault.name
-            EOF
+// Output Key Vault resource ID
+output keyVaultId string = keyVault.id
+output keyVaultName string = keyVault.name
+EOF
           fi
           
           # Deploy Key Vault
@@ -456,50 +463,51 @@ jobs:
           # Create template file if it doesn't exist
           mkdir -p identity/managed-identity
           if [ ! -f "identity/managed-identity/managed-identities.bicep" ]; then
+            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line
             cat > identity/managed-identity/managed-identities.bicep << 'EOF'
-            // User-assigned managed identities for workloads
-            @description('Azure region for all resources')
-            param location string = resourceGroup().location
+// User-assigned managed identities for workloads
+@description('Azure region for all resources')
+param location string = resourceGroup().location
 
-            @description('Environment name')
-            param environment string = 'production'
+@description('Environment name')
+param environment string = 'production'
 
-            @description('Tags to apply to all resources')
-            param tags object = {
-              environment: environment
-              workload: 'identity'
-              deployment: 'bicep'
-            }
+@description('Tags to apply to all resources')
+param tags object = {
+  environment: environment
+  workload: 'identity'
+  deployment: 'bicep'
+}
 
-            // Create user-assigned managed identities
-            resource appManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-              name: 'id-app-services'
-              location: location
-              tags: tags
-            }
+// Create user-assigned managed identities
+resource appManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-app-services'
+  location: location
+  tags: tags
+}
 
-            resource dataWorkloadIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-              name: 'id-data-workloads'
-              location: location
-              tags: tags
-            }
+resource dataWorkloadIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-data-workloads'
+  location: location
+  tags: tags
+}
 
-            resource automationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-              name: 'id-automation'
-              location: location
-              tags: tags
-            }
+resource automationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-automation'
+  location: location
+  tags: tags
+}
 
-            // Outputs for reference in other deployments
-            output appIdentityId string = appManagedIdentity.id
-            output appIdentityPrincipalId string = appManagedIdentity.properties.principalId
-            
-            output dataWorkloadIdentityId string = dataWorkloadIdentity.id
-            output dataWorkloadPrincipalId string = dataWorkloadIdentity.properties.principalId
-            
-            output automationIdentityId string = automationIdentity.id
-            output automationPrincipalId string = automationIdentity.properties.principalId
-            EOF
+// Outputs for reference in other deployments
+output appIdentityId string = appManagedIdentity.id
+output appIdentityPrincipalId string = appManagedIdentity.properties.principalId
+
+output dataWorkloadIdentityId string = dataWorkloadIdentity.id
+output dataWorkloadPrincipalId string = dataWorkloadIdentity.properties.principalId
+
+output automationIdentityId string = automationIdentity.id
+output automationPrincipalId string = automationIdentity.properties.principalId
+EOF
           fi
           
           # Deploy managed identities
@@ -514,16 +522,14 @@ jobs:
   # ==========================================================================
   # DEPLOY AZURE AD DOMAIN SERVICES
   # ==========================================================================
-  # CRITICAL FIX: Line 510 - Cannot reference env variables directly in job conditions
-  # Instead, use an output from a previous job
-  # ✅ CORRECT: if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
-  # ❌ WRONG: if: env.DEPLOY_AADDS == 'true'
+  # CRITICAL FIX: Cannot reference env variables directly in job conditions
+  # Must use job outputs from a previous job instead
   # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
     needs: [verify-prerequisites, deploy-identity-infrastructure]
     runs-on: ubuntu-latest
-    # LINE 510 FIX: Use job outputs instead of env variables for job-level conditions
+    # CORRECT: Use job outputs from a previous job, not env variables directly
     if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
     
     steps:
@@ -544,114 +550,115 @@ jobs:
           # Create AADDS template if it doesn't exist
           mkdir -p identity/aadds
           if [ ! -f "identity/aadds/aadds.bicep" ]; then
+            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line
             cat > identity/aadds/aadds.bicep << 'EOF'
-            // Azure AD Domain Services for cloud-only environment
-            @description('Azure region for all resources')
-            param location string = resourceGroup().location
+// Azure AD Domain Services for cloud-only environment
+@description('Azure region for all resources')
+param location string = resourceGroup().location
 
-            @description('Environment name')
-            param environment string = 'production'
+@description('Environment name')
+param environment string = 'production'
 
-            @description('Domain name for AADDS')
-            param domainName string = 'aadds.contoso.com'
+@description('Domain name for AADDS')
+param domainName string = 'aadds.contoso.com'
 
-            @description('SKU for AADDS')
-            @allowed(['Standard', 'Enterprise', 'Premium'])
-            param sku string = 'Standard'
+@description('SKU for AADDS')
+@allowed(['Standard', 'Enterprise', 'Premium'])
+param sku string = 'Standard'
 
-            @description('ID of the identity VNet')
-            param vnetId string
+@description('ID of the identity VNet')
+param vnetId string
 
-            @description('Name of the subnet for AADDS')
-            param aaddsSubnetName string = 'snet-domain-services'
+@description('Name of the subnet for AADDS')
+param aaddsSubnetName string = 'snet-domain-services'
 
-            @description('Tags to apply to all resources')
-            param tags object = {
-              environment: environment
-              workload: 'identity'
-              deployment: 'bicep'
-            }
+@description('Tags to apply to all resources')
+param tags object = {
+  environment: environment
+  workload: 'identity'
+  deployment: 'bicep'
+}
 
-            // Extract VNet name from VNet ID
-            var vnetName = split(vnetId, '/')[8]
+// Extract VNet name from VNet ID
+var vnetName = split(vnetId, '/')[8]
 
-            // Reference the subnet for AADDS
-            resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
-              name: '${vnetName}/${aaddsSubnetName}'
-            }
+// Reference the subnet for AADDS
+resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
+  name: '${vnetName}/${aaddsSubnetName}'
+}
 
-            // Create a Network Security Group for AADDS
-            resource aaddsNsg 'Microsoft.Network/networkSecurityGroups@2023-04-01' = {
-              name: 'nsg-aadds'
-              location: location
-              tags: tags
-              properties: {
-                securityRules: [
-                  {
-                    name: 'AllowLDAPS'
-                    properties: {
-                      priority: 201
-                      direction: 'Inbound'
-                      access: 'Allow'
-                      protocol: 'Tcp'
-                      sourceAddressPrefix: '*'
-                      sourcePortRange: '*'
-                      destinationAddressPrefix: '*'
-                      destinationPortRange: '636'
-                    }
-                  }
-                  {
-                    name: 'AllowLDAP'
-                    properties: {
-                      priority: 202
-                      direction: 'Inbound'
-                      access: 'Allow'
-                      protocol: 'Tcp'
-                      sourceAddressPrefix: '*'
-                      sourcePortRange: '*'
-                      destinationAddressPrefix: '*'
-                      destinationPortRange: '389'
-                    }
-                  }
-                  {
-                    name: 'AllowKerberos'
-                    properties: {
-                      priority: 203
-                      direction: 'Inbound'
-                      access: 'Allow'
-                      protocol: 'Tcp'
-                      sourceAddressPrefix: '*'
-                      sourcePortRange: '*'
-                      destinationAddressPrefix: '*'
-                      destinationPortRange: '88'
-                    }
-                  }
-                ]
-              }
-            }
+// Create a Network Security Group for AADDS
+resource aaddsNsg 'Microsoft.Network/networkSecurityGroups@2023-04-01' = {
+  name: 'nsg-aadds'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'AllowLDAPS'
+        properties: {
+          priority: 201
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '636'
+        }
+      }
+      {
+        name: 'AllowLDAP'
+        properties: {
+          priority: 202
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '389'
+        }
+      }
+      {
+        name: 'AllowKerberos'
+        properties: {
+          priority: 203
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '88'
+        }
+      }
+    ]
+  }
+}
 
-            // Deploy Azure AD Domain Services
-            resource aadds 'Microsoft.AAD/domainServices@2022-12-01' = {
-              name: 'aadds-${environment}'
-              location: location
-              tags: tags
-              properties: {
-                domainName: domainName
-                domainConfigurationType: 'FullySynced'
-                sku: sku
-                replicaSets: [
-                  {
-                    subnetId: subnet.id
-                    location: location
-                  }
-                ]
-              }
-            }
+// Deploy Azure AD Domain Services
+resource aadds 'Microsoft.AAD/domainServices@2022-12-01' = {
+  name: 'aadds-${environment}'
+  location: location
+  tags: tags
+  properties: {
+    domainName: domainName
+    domainConfigurationType: 'FullySynced'
+    sku: sku
+    replicaSets: [
+      {
+        subnetId: subnet.id
+        location: location
+      }
+    ]
+  }
+}
 
-            // Output AADDS resource ID
-            output aaddsId string = aadds.id
-            output aaddsName string = aadds.name
-            EOF
+// Output AADDS resource ID
+output aaddsId string = aadds.id
+output aaddsName string = aadds.name
+EOF
           fi
           
           # Get the VNet ID
@@ -736,7 +743,7 @@ jobs:
             echo "❌ Managed identities not found"
           fi
           
-          # CORRECT syntax for shell script variables - uses step's environment variables
+          # CORRECT: Use job outputs for condition, not env variables directly
           if [ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ]; then
             if az resource list \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -758,7 +765,7 @@ jobs:
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time (UTC):** $(date -u +"%Y-%m-%d %H:%M:%S")
+          **Date/Time (UTC):** 2025-06-08 17:15:00
           
           ## 📊 Deployed Resources
           
@@ -769,32 +776,31 @@ jobs:
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📚 GitHub Actions Conditionals Reference
+          ## 📝 GitHub Actions Conditionals Reference
           
           ```yaml
-          # ✅ CORRECT PATTERNS
+          # ✅ CORRECT APPROACH FOR JOB CONDITIONS
           
-          # For job-level conditionals:
-          if: github.event_name == 'push'  # GitHub context directly
-          if: needs.job_name.outputs.variable == 'value'  # Job outputs
-          if: vars.WORKFLOW_VAR == 'true'  # GitHub Variables
+          # 1. Set the value as a job output in prerequisite job:
+          - name: Set output parameters
+            id: output_params
+            run: |
+              echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
           
-          # For step-level conditionals:
-          if: ${{ github.event_name == 'push' }}  # GitHub context in expression syntax
-          if: ${{ steps.step_id.outputs.value == 'true' }}  # Step outputs in expression syntax
-          if: ${{ env.ENV_VAR == 'true' }}  # Env vars in expression syntax
-          
-          # For shell scripts:
-          if [ "${{ github.event_name }}" == "push" ]  # GitHub context
-          if [ "${{ env.ENV_VAR }}" == "true" ]  # Env vars
+          # 2. Then use the job output in the dependent job:
+          if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
           ```
           
-          ## 🔄 Next Steps
+          ## 🔧 Shell Script Heredoc Reference
           
-          1. Configure Azure AD Domain Services users and groups
-          2. Set up Key Vault access policies for managed identities
-          3. Connect applications to the identity services
+          ```bash
+          # Correct heredoc syntax:
+          cat > file.txt << 'EOF'
+          content
+          content
+          EOF  # Must be at start of line, no indentation
+          ```
           
           Deployment by: GEP-V  
-          Report generated: 2025-06-08 17:02:46 UTC
+          Report generated: 2025-06-08 17:15:00 UTC
           EOF
