@@ -1,6 +1,21 @@
 # =========================================================
 # Enterprise Azure Landing Zone - Connectivity Resources Deployment
 # =========================================================
+# PROMPT ENGINEERING GUIDANCE:
+# This workflow has been updated to fix key issues:
+# 1. Added proper deployment jobs that were missing
+# 2. Added clear logging for troubleshooting
+# 3. Added environment-specific parameter handling
+# 4. Added explicit resource checks after deployment
+#
+# WORKFLOW STRUCTURE:
+# - validate: Validates Bicep templates
+# - deploy-hub-network: Creates hub resources
+# - deploy-dns-zones: Adds private DNS zones
+# - generate-report: Creates deployment summary
+#
+# The initial workflow only had validation but no deployment jobs!
+
 name: Deploy Connectivity Resources
 
 on:
@@ -57,10 +72,281 @@ jobs:
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}  # THIS LINE IS CRITICAL
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
           enable-AzPSSession: false
-          environment: azurecloud
-          audience: api://AzureADTokenExchange
-          auth-type: SERVICE_PRINCIPAL
 
-      # Remaining steps...
+      - name: Validate connectivity templates
+        run: |
+          echo "Validating connectivity Bicep templates..."
+          
+          # List bicep files for debugging
+          echo "Bicep files in connectivity folder:"
+          find ./connectivity -name "*.bicep" | sort
+          
+          # Test build each bicep file to validate
+          for file in $(find ./connectivity -name "*.bicep"); do
+            echo "Validating $file..."
+            az bicep build --file "$file" --stdout > /dev/null
+            if [ $? -ne 0 ]; then
+              echo "::error::Bicep validation failed for $file"
+              exit 1
+            fi
+          done
+          
+          echo "✅ All bicep templates are valid."
+
+  # ==========================================================================
+  # CRITICAL FIX: Added missing deployment job that was not in the original workflow
+  # ==========================================================================
+  deploy-hub-network:
+    name: Deploy Hub Network
+    needs: validate
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+
+      - name: Create resource group
+        run: |
+          echo "Creating resource group ${{ env.RESOURCE_GROUP_NAME }} in ${{ env.LOCATION }}..."
+          az group create \
+            --name ${{ env.RESOURCE_GROUP_NAME }} \
+            --location ${{ env.LOCATION }} \
+            --tags environment=${{ env.ENVIRONMENT }} deployedBy=GitHub
+          
+          echo "Resource group created/verified."
+      
+      - name: Find hub network template
+        id: find_template
+        run: |
+          # Look for hub-network.bicep in the expected locations
+          TEMPLATE_PATHS=(
+            "connectivity/hub-network/hub-network.bicep"
+            "connectivity/hub-network.bicep"
+          )
+          
+          for path in "${TEMPLATE_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+              echo "Found hub network template at: $path"
+              echo "TEMPLATE_PATH=$path" >> $GITHUB_ENV
+              break
+            fi
+          done
+          
+          if [ -z "$TEMPLATE_PATH" ]; then
+            echo "::error::Hub network template not found!"
+            find ./connectivity -type f -name "*.bicep" | sort
+            exit 1
+          fi
+      
+      - name: Find parameter file
+        run: |
+          # Try to find parameter file
+          PARAM_PATHS=(
+            "connectivity/hub-network/parameters/hub-network.parameters.json"
+            "connectivity/hub-network/parameters/hub-network-${{ env.ENVIRONMENT }}.parameters.json"
+            "connectivity/parameters/hub-network.parameters.json"
+            "connectivity/parameters/hub-network-${{ env.ENVIRONMENT }}.parameters.json"
+          )
+          
+          for path in "${PARAM_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+              echo "Found parameter file at: $path"
+              echo "PARAM_PATH=$path" >> $GITHUB_ENV
+              break
+            fi
+          done
+      
+      - name: Deploy hub network
+        id: deploy_hub
+        run: |
+          echo "Deploying hub network..."
+          
+          # Prepare parameters
+          DEPLOYMENT_PARAMS=""
+          if [ -n "$PARAM_PATH" ]; then
+            DEPLOYMENT_PARAMS="--parameters @$PARAM_PATH"
+            echo "Using parameter file: $PARAM_PATH"
+          else
+            echo "No parameter file found, using inline parameters"
+            DEPLOYMENT_PARAMS="--parameters environment=${{ env.ENVIRONMENT }} location=${{ env.LOCATION }}"
+          fi
+          
+          # Deploy hub network
+          echo "Executing deployment with template: $TEMPLATE_PATH"
+          az deployment group create \
+            --name "hub-network-$(date +%Y%m%d%H%M%S)" \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --template-file "$TEMPLATE_PATH" \
+            $DEPLOYMENT_PARAMS
+          
+          # List all resources to verify deployment
+          echo "Listing deployed resources in ${{ env.RESOURCE_GROUP_NAME }}:"
+          az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --output table
+          
+          # Check if VNet was created (common hub resource)
+          VNETS=$(az network vnet list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv)
+          if [ -n "$VNETS" ]; then
+            echo "✅ Virtual networks deployed: $VNETS"
+          else
+            echo "⚠️ No virtual networks found in resource group."
+          fi
+
+  # ==========================================================================
+  # CRITICAL FIX: Added missing DNS deployment job
+  # ==========================================================================
+  deploy-dns-zones:
+    name: Deploy Private DNS Zones
+    needs: deploy-hub-network
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+      
+      - name: Find DNS template
+        id: find_dns_template
+        run: |
+          # Look for private-dns.bicep in the expected locations
+          DNS_TEMPLATE_PATHS=(
+            "connectivity/dns/private-dns.bicep"
+            "connectivity/private-dns.bicep"
+            "connectivity/dns.bicep"
+          )
+          
+          for path in "${DNS_TEMPLATE_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+              echo "Found DNS template at: $path"
+              echo "DNS_TEMPLATE_PATH=$path" >> $GITHUB_ENV
+              break
+            fi
+          done
+          
+          if [ -z "$DNS_TEMPLATE_PATH" ]; then
+            echo "::warning::Private DNS template not found, skipping DNS deployment"
+            echo "DNS_TEMPLATE_EXISTS=false" >> $GITHUB_ENV
+          else
+            echo "DNS_TEMPLATE_EXISTS=true" >> $GITHUB_ENV
+          fi
+      
+      - name: Deploy private DNS zones
+        if: env.DNS_TEMPLATE_EXISTS == 'true'
+        run: |
+          echo "Deploying private DNS zones..."
+          
+          # Find parameter file
+          PARAM_PATHS=(
+            "connectivity/dns/parameters/private-dns.parameters.json"
+            "connectivity/dns/parameters/private-dns-${{ env.ENVIRONMENT }}.parameters.json"
+            "connectivity/parameters/private-dns.parameters.json"
+          )
+          
+          PARAM_ARG=""
+          for path in "${PARAM_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+              echo "Using parameter file: $path"
+              PARAM_ARG="--parameters @$path"
+              break
+            fi
+          done
+          
+          if [ -z "$PARAM_ARG" ]; then
+            echo "No parameter file found, using inline parameters"
+            PARAM_ARG="--parameters environment=${{ env.ENVIRONMENT }}"
+          fi
+          
+          # Deploy DNS zones
+          az deployment group create \
+            --name "private-dns-$(date +%Y%m%d%H%M%S)" \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --template-file "$DNS_TEMPLATE_PATH" \
+            $PARAM_ARG
+          
+          # List deployed DNS zones
+          echo "Deployed private DNS zones:"
+          az network private-dns zone list \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --query "[].name" -o tsv
+
+  # ==========================================================================
+  # CRITICAL FIX: Added resource verification job 
+  # ==========================================================================
+  generate-report:
+    name: Verify Resources
+    needs: [deploy-hub-network, deploy-dns-zones]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+      
+      - name: Generate resource report
+        run: |
+          echo "Verifying connectivity resources in subscription..."
+          
+          # Check if resource group exists
+          if ! az group show --name ${{ env.RESOURCE_GROUP_NAME }} &>/dev/null; then
+            echo "::error::Resource group ${{ env.RESOURCE_GROUP_NAME }} not found!"
+            exit 1
+          fi
+          
+          # List all resources in the resource group
+          echo "Resources in ${{ env.RESOURCE_GROUP_NAME }}:"
+          az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --output table
+          
+          # Count resources by type
+          echo "Resource count by type:"
+          az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].type" -o tsv | sort | uniq -c
+          
+          # Generate markdown summary
+          cat << EOF > $GITHUB_STEP_SUMMARY
+          # Connectivity Deployment Summary
+          
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Environment:** ${{ env.ENVIRONMENT }}
+          **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
+          
+          ## Deployed Resources
+          
+          | Resource Type | Count |
+          |--------------|-------|
+          EOF
+          
+          while read count type; do
+            echo "| $type | $count |" >> $GITHUB_STEP_SUMMARY
+          done < <(az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].type" -o tsv | sort | uniq -c)
+          
+          # Add viewing instructions
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          
+          ## Viewing Instructions
+          
+          To see these resources in the Azure portal:
+          1. Navigate to the Resource Group view (not the subscription Resource Visualizer)
+          2. Select resource group "${{ env.RESOURCE_GROUP_NAME }}"
+          3. Resources should appear in the resource list
+          
+          If no resources appear, please check the deployment job logs above for errors.
+          EOF
