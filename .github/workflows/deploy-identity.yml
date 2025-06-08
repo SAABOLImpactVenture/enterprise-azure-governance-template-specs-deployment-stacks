@@ -2,30 +2,25 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
 # PROMPT ENGINEERING GUIDANCE:
-# This workflow provisions core identity resources for a cloud-only enterprise landing zone:
-# - Azure AD Domain Services (managed domain service)
-# - Key Vault for identity-related secrets with private endpoints
-# - Log Analytics workspace for identity monitoring
-# - User-assigned managed identities for workload authentication
-# - Private DNS integration with connectivity subscription
+# This workflow provisions core identity resources for a cloud-only enterprise landing zone.
 #
-# CRITICAL SYNTAX DIFFERENCES IN GITHUB ACTIONS CONDITIONALS:
-# --------------------------------------------------------
-# 1. JOB-LEVEL CONDITIONALS ✓✗
-#    ✓ CORRECT: if: env.DEPLOY_AADDS == 'true'
-#    ✗ WRONG:   if: ${{ env.DEPLOY_AADDS == 'true' }}
+# GITHUB ACTIONS CONDITIONAL SYNTAX GUIDE:
+# ----------------------------------------
+# JOB-LEVEL CONDITIONALS ★
+#   CORRECT: if: env.DEPLOY_AADDS == 'true'                 (no braces)
+#   WRONG:   if: ${{ env.DEPLOY_AADDS == 'true' }}          (has braces)
 #
-# 2. STEP-LEVEL CONDITIONALS ✓✗
-#    ✓ CORRECT: if: ${{ steps.my_step.outputs.result == 'success' }}
-#    ✗ WRONG:   if: steps.my_step.outputs.result == 'success'
+# STEP-LEVEL CONDITIONALS ★
+#   CORRECT: if: ${{ steps.my_step.outputs.value == 'success' }}   (has braces)
+#   WRONG:   if: steps.my_step.outputs.value == 'success'          (no braces)
 #
-# 3. SHELL SCRIPT CONDITIONALS ✓✗
-#    ✓ CORRECT: if [ "${{ env.MY_VAR }}" == "true" ]
-#    ✗ WRONG:   if [ "env.MY_VAR" == "true" ]
+# SHELL SCRIPTS ★
+#   CORRECT: if [ "${{ env.MY_VAR }}" == "true" ]           (has braces)
+#   WRONG:   if [ "env.MY_VAR" == "true" ]                  (no braces)
 #
-# 4. WORKFLOW STRUCTURE:
-#    - At least one job must have NO dependencies (no "needs" parameter)
-# --------------------------------------------------------
+# WORKFLOW STRUCTURE ★
+#   - At least one job MUST have no dependencies (no "needs" parameter)
+# ----------------------------------------
 
 name: Provision Identity
 
@@ -78,13 +73,12 @@ jobs:
   # VERIFY PREREQUISITES JOB - WORKFLOW ENTRY POINT
   # ==========================================================================
   # PROMPT GUIDANCE:
-  # - This job has NO "needs" parameter - it serves as the workflow entry point
+  # - This job has NO "needs" parameter - required as the workflow entry point
   # - Every GitHub Actions workflow MUST have at least one job without dependencies
-  # - Validation before deployment prevents downstream failures
   # ==========================================================================
   verify-prerequisites:
     name: Verify Prerequisites
-    # NO "needs" parameter here - entry point job!
+    # No "needs" parameter here - this is the workflow entry point
     runs-on: ubuntu-latest
     
     steps:
@@ -137,8 +131,7 @@ jobs:
   # ==========================================================================
   # PROMPT GUIDANCE:
   # - This job depends on verify-prerequisites job completion
-  # - Network infrastructure must be deployed before identity services
-  # - Consistent tagging strategy enables better governance
+  # - Resource group and networks must be deployed before identity services
   # ==========================================================================
   deploy-identity-infrastructure:
     name: Deploy Identity Infrastructure
@@ -293,7 +286,26 @@ jobs:
             --name "vnet-identity" \
             --query id -o tsv)
           
-          # Check if Key Vault template exists and create if missing
+          # Create private DNS zone for Key Vault if it doesn't exist
+          echo "Creating private DNS zone for Key Vault..."
+          if ! az network private-dns zone show \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name "privatelink.vaultcore.azure.net" &>/dev/null; then
+            
+            az network private-dns zone create \
+              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+              --name "privatelink.vaultcore.azure.net"
+              
+            # Link private DNS zone to VNet
+            az network private-dns link vnet create \
+              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+              --zone-name "privatelink.vaultcore.azure.net" \
+              --name "link-to-identity-vnet" \
+              --virtual-network $VNET_ID \
+              --registration-enabled false
+          fi
+          
+          # Check if Key Vault template exists
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
             mkdir -p identity/key-vault
             cat > identity/key-vault/key-vault.bicep << 'EOF'
@@ -383,25 +395,6 @@ jobs:
             output keyVaultId string = keyVault.id
             output keyVaultName string = keyVault.name
             EOF
-          fi
-          
-          # Create private DNS zone for Key Vault if it doesn't exist
-          echo "Creating private DNS zone for Key Vault..."
-          if ! az network private-dns zone show \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --name "privatelink.vaultcore.azure.net" &>/dev/null; then
-            
-            az network private-dns zone create \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --name "privatelink.vaultcore.azure.net"
-              
-            # Link private DNS zone to VNet
-            az network private-dns link vnet create \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --zone-name "privatelink.vaultcore.azure.net" \
-              --name "link-to-identity-vnet" \
-              --virtual-network $VNET_ID \
-              --registration-enabled false
           fi
           
           # Deploy Key Vault
@@ -510,8 +503,7 @@ jobs:
   # PROMPT GUIDANCE:
   # - Azure AD DS provides managed domain services for a cloud-only environment
   # - Only deployed if specifically requested (costly service)
-  # - Conditional jobs use different syntax than conditional steps
-  # - THE ERROR WAS HERE: Line 533 - incorrect use of curly braces in job-level conditional
+  # - CRITICAL FIX ON LINE 521: Job-level conditionals MUST use simplified syntax
   # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
@@ -770,11 +762,11 @@ jobs:
           
           ## GitHub Actions Syntax Quick Reference
           
-          | Context | Correct Syntax | Notes |
-          |---------|---------------|-------|
-          | Job-level if | \`if: env.VAR == 'value'\` | **NO curly braces** |
-          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | Requires curly braces |
-          | Shell scripts | \`if [ "\${{ env.VAR }}" == "value" ]\` | Requires curly braces |
+          | Context | Correct Syntax | Example |
+          |---------|---------------|---------|
+          | Job-level if | \`if: env.VAR == 'value'\` | \`if: env.DEPLOY_AADDS == 'true'\` |
+          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | \`if: \${{ steps.check.outputs.enabled == 'true' }}\` |
+          | Shell scripts | \`if [ "\${{ env.VAR }}" == "value" ]\` | \`if [ "\${{ env.DEPLOY_AADDS }}" == "true" ]\` |
           
           Deployment completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
