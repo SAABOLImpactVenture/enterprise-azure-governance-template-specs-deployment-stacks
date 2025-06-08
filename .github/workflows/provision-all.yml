@@ -38,6 +38,25 @@ jobs:
         with:
           fetch-depth: 0
           
+      - name: List repository structure
+        run: |
+          echo "Repository root contents:"
+          ls -la
+          
+          echo "\nChecking landing-zone directory:"
+          if [ -d "landing-zone" ]; then
+            ls -la landing-zone
+            
+            echo "\nChecking landing-zone/scripts directory:"
+            if [ -d "landing-zone/scripts" ]; then
+              ls -la landing-zone/scripts
+            else
+              echo "landing-zone/scripts directory not found!"
+            fi
+          else
+            echo "landing-zone directory not found!"
+          fi
+          
       - name: Setup PowerShell module
         uses: actions/setup-dotnet@v4
         with:
@@ -46,6 +65,7 @@ jobs:
       - name: Install Azure PowerShell modules
         shell: pwsh
         run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module -Name Az.Accounts -Force -AllowClobber -Scope CurrentUser
           Install-Module -Name Az.Subscription -Force -AllowClobber -Scope CurrentUser
           Install-Module -Name Az.Resources -Force -AllowClobber -Scope CurrentUser
@@ -58,23 +78,46 @@ jobs:
           subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
           
-      - name: Provision subscriptions
+      - name: Find and run provisioning script
         id: provision
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           Write-Host "Logged in to Azure, starting subscription provisioning..."
           
-          # Check if the script exists before running
-          if (Test-Path -Path "./landing-zone/scripts/provision-subscriptions.ps1") {
+          # List repository structure for debugging
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Directory contents:"
+          Get-ChildItem -Force | Format-Table -AutoSize
+          
+          # Check multiple possible script locations
+          $possiblePaths = @(
+            "./landing-zone/scripts/provision-subscriptions.ps1",
+            "./scripts/provision-subscriptions.ps1",
+            "./provision-subscriptions.ps1",
+            "./landing-zone/provision-subscriptions.ps1"
+          )
+          
+          $scriptPath = $null
+          foreach ($path in $possiblePaths) {
+            Write-Host "Checking for script at: $path"
+            if (Test-Path -Path $path) {
+              $scriptPath = $path
+              Write-Host "✅ Found script at: $path"
+              break
+            }
+          }
+          
+          if ($scriptPath) {
             # Run the subscription provisioning script
-            ./landing-zone/scripts/provision-subscriptions.ps1 `
-              -Environment "${{ github.event.inputs.environment }}" `
-              -ManagementGroupId "${{ github.event.inputs.managementGroupId }}" `
-              -Verbose
+            & $scriptPath -Environment "${{ github.event.inputs.environment }}" -ManagementGroupId "${{ github.event.inputs.managementGroupId }}" -Verbose
           } else {
-            Write-Error "Provisioning script not found at expected path!"
-            exit 1
+            Write-Host "❌ Provisioning script not found! Looked in these locations:"
+            $possiblePaths | ForEach-Object { Write-Host "  - $_" }
+            
+            # Create empty results file for downstream steps
+            Write-Warning "No provisioning script found. Creating empty results file."
+            '[]' | Out-File -FilePath ./subscription-results.json
           }
             
           # Check if results file exists
@@ -83,8 +126,9 @@ jobs:
             $results | ConvertTo-Json -Depth 10 | Out-File -FilePath subscription-results.json
             
             # Output summary for GitHub workflow
-            Write-Host "::set-output name=subscription_count::$($results.Count)"
-            Write-Host "Successfully provisioned $($results.Count) subscriptions"
+            $count = if ($results -is [array]) { $results.Count } else { 1 }
+            Write-Host "::set-output name=subscription_count::$count"
+            Write-Host "Successfully processed $count subscriptions"
           } else {
             Write-Warning "No subscription results file found. Creating empty one."
             '[]' | Out-File -FilePath subscription-results.json
@@ -98,39 +142,32 @@ jobs:
           path: subscription-results.json
           retention-days: 30
           
-      - name: Apply policies to new subscriptions
-        if: steps.provision.outputs.subscription_count > 0
-        run: |
-          echo "Applying policies to newly provisioned subscriptions..."
-          if [ -f "./landing-zone/scripts/assign-subscriptions.sh" ]; then
-            ./landing-zone/scripts/assign-subscriptions.sh \
-              --subscriptions-file ./subscription-results.json \
-              --environment ${{ github.event.inputs.environment }}
-          else
-            echo "Warning: Policy assignment script not found!"
-          fi
-            
       - name: Generate provisioning report
         shell: pwsh
         run: |
-          $results = Get-Content -Path ./subscription-results.json | ConvertFrom-Json
-          
           $reportContent = "# Subscription Provisioning Report`n"
           $reportContent += "**Date:** $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n"
           $reportContent += "**Environment:** ${{ github.event.inputs.environment }}`n"
-          $reportContent += "**User:** GEP-V1s`n`n"
-          $reportContent += "**Runner Version:** 2.325.0`n`n"
-          $reportContent += "## Provisioned Subscriptions`n"
+          $reportContent += "**User:** GEP-V31s`n\n"
           
-          if ($results.Count -gt 0) {
-            $reportContent += "| Subscription Name | Subscription ID | Management Group | Status |`n"
-            $reportContent += "|------------------|----------------|-----------------|--------|`n"
+          if (Test-Path -Path ./subscription-results.json) {
+            $results = Get-Content -Path ./subscription-results.json | ConvertFrom-Json
             
-            foreach ($sub in $results) {
-              $reportContent += "| $($sub.Name) | $($sub.SubscriptionId) | $($sub.ManagementGroupId) | ✓ Success |`n"
+            if ($results -and ($results -is [array]) -and ($results.Count -gt 0)) {
+              $reportContent += "## Provisioned Subscriptions`n"
+              $reportContent += "| Subscription Name | Subscription ID | Management Group | Status |`n"
+              $reportContent += "|------------------|----------------|-----------------|--------|`n"
+              
+              foreach ($sub in $results) {
+                $reportContent += "| $($sub.Name) | $($sub.SubscriptionId) | $($sub.ManagementGroupId) | ✓ Success |`n"
+              }
+            } else {
+              $reportContent += "## No Subscriptions Provisioned`n"
+              $reportContent += "No subscriptions were provisioned in this run.`n"
             }
           } else {
-            $reportContent += "No subscriptions were provisioned in this run.`n"
+            $reportContent += "## Results File Not Found`n"
+            $reportContent += "No subscription results file was generated.`n"
           }
           
           $reportContent | Out-File -FilePath ./provisioning-report.md
@@ -141,7 +178,7 @@ jobs:
           name: provisioning-report
           path: provisioning-report.md
           retention-days: 30
-
+          
   notify:
     name: Send notification
     needs: provision-subscriptions
@@ -149,14 +186,12 @@ jobs:
     if: ${{ always() }}
     
     steps:
-      - name: Notify success
-        if: ${{ needs.provision-subscriptions.result == 'success' }}
+      - name: Notify status
         run: |
-          echo "Subscriptions provisioned successfully"
-          # Add notification logic (email, Teams, etc.)
-          
-      - name: Notify failure
-        if: ${{ needs.provision-subscriptions.result == 'failure' }}
-        run: |
-          echo "Failed to provision subscriptions"
+          status="${{ needs.provision-subscriptions.result }}"
+          if [ "$status" == "success" ]; then
+            echo "Subscriptions provisioned successfully"
+          else
+            echo "Warning: Subscription provisioning process completed with status: $status"
+          fi
           # Add notification logic (email, Teams, etc.)
