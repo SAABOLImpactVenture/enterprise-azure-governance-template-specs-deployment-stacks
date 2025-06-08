@@ -1,218 +1,334 @@
-# ===============================================================
-# Azure Landing Zone Deployment Workflow
-# ===============================================================
-# Last Updated: 2025-06-06 19:43:12 UTC
-# Current User's Login: GEP-V
+# ==========================================================================
+# Enterprise Azure Landing Zone - Continuous Integration
+# ==========================================================================
+# PROMPT ENGINEERING GUIDANCE:
+# This workflow validates landing zone configurations before deployment:
+# - Runs on pull requests and manual triggers
+# - Validates Bicep/ARM templates
+# - Checks policies against organizational standards
+# - Runs security and best practice scans
+# - Doesn't deploy actual resources (validation only)
 #
-# DESCRIPTION:
-# This workflow deploys the landing zone Bicep template to all
-# subscriptions in the Azure Enterprise Landing Zone architecture.
-# It uses a matrix strategy to efficiently deploy to multiple
-# subscriptions in parallel.
-# ===============================================================
+# REQUIRED SECRETS CONFIGURATION:
+# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
+# - AZURE_CLIENT_ID: App registration client ID with federated credentials
+# - MANAGEMENT_SUBSCRIPTION_ID: Used for validation operations
+#
+# CI WORKFLOW TIP: This workflow should be fast and focused on validation,
+# while the deploy-landingzones.yml handles actual deployments.
 
-name: Deploy Landing Zone
+name: Landing Zone CI
 
 on:
-  push:
+  pull_request:
     branches:
       - main
     paths:
-      - 'landing-zone/**'
-  # Optional: Add manual trigger
+      - 'landingzones/**'
+      - '.github/workflows/landing-zone-ci.yml'
+  
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to deploy'
+      landingZoneType:
+        description: 'Landing zone type to validate'
         required: true
-        default: 'production'
+        default: 'all'
         type: choice
         options:
-          - production
-          - development
+          - all
+          - analytics-a2
+          - production-p1
 
-# Common environment variables shared across all jobs
+# ==========================================================================
+# PERMISSIONS
+# PROMPT GUIDANCE: Keep permissions minimal for CI workflows
+# ==========================================================================
+permissions:
+  id-token: write  # Required for OIDC authentication
+  contents: read   # Required to read repo files
+  pull-requests: write  # Allows posting validation results as comments
+
+# ==========================================================================
+# ENVIRONMENT VARIABLES
+# ==========================================================================
+# PROMPT GUIDANCE:
+# - CI workflows should use a non-production subscription
+# - The MANAGEMENT_SUBSCRIPTION_ID is used since it typically has 
+#   the necessary permissions for validation without deploying resources
+# ==========================================================================
 env:
-  AZURE_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_OIDC_CLIENT_ID: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
+  VALIDATION_LOCATION: 'eastus2'
 
 jobs:
-  deploy-landing-zone:
+  # ==========================================================================
+  # VALIDATION JOB
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job performs static analysis and validation of templates
+  # - It doesn't create any Azure resources (what-if only)
+  # - Add linting and other checks that don't require Azure credentials
+  # - Fails fast if any templates are invalid
+  # ==========================================================================
+  validate-templates:
+    name: Validate Landing Zone Templates
     runs-on: ubuntu-latest
-    # Add timeout protection to prevent hung jobs
-    timeout-minutes: 60
-    
-    # Use strategy.matrix to deploy to multiple subscriptions in parallel
-    strategy:
-      # Continue to other subscriptions even if one fails
-      fail-fast: false
-      matrix:
-        include:
-          - subscription_name: "Management"
-            subscription_id: ${{ secrets.MANAGEMENT_SUB_ID }}
-          - subscription_name: "Identity"
-            subscription_id: ${{ secrets.IDENTITY_SUB_ID }}
-          - subscription_name: "Connectivity"
-            subscription_id: ${{ secrets.CONNECTIVITY_SUB_ID }}
-          - subscription_name: "LandingZone-P1"
-            subscription_id: ${{ secrets.LANDING_P1_SUB_ID }}
-          - subscription_name: "LandingZone-A2"
-            subscription_id: ${{ secrets.LANDING_A2_SUB_ID }}
-          - subscription_name: "Sandbox" 
-            subscription_id: ${{ secrets.SANDBOX_SUB_ID }}
-
-    # Name the job with the subscription for better visibility in GitHub UI
-    name: Deploy to ${{ matrix.subscription_name }}
-
     steps:
-      # ===============================================================
-      # STEP 1: CHECKOUT REPOSITORY
-      # ===============================================================
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          # Fetch complete history for auditing purposes
           fetch-depth: 0
 
-      # ===============================================================
-      # STEP 2: PREPARE PARAMETERS FILE
-      # ===============================================================
-      - name: Prepare parameters file
-        id: prepare_params
+      - name: Set up Bicep
         run: |
-          echo "Preparing parameters file for ${{ matrix.subscription_name }} subscription"
+          # Install latest Azure CLI if not available
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
           
-          # Create a copy of the parameters file for this specific subscription
-          cp landing-zone/parameters/landing-zone.parameters.json landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
+          # Check Bicep installation
+          az bicep version
           
-          # Replace any subscription ID tokens in the parameters file
-          sed -i "s/\${SUBSCRIPTION_ID}/${{ matrix.subscription_id }}/g" landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
-          
-          # Replace any other environment-specific tokens if needed
-          if [[ -f "landing-zone/parameters/tokens.json" ]]; then
-            echo "Applying token replacements from tokens.json"
-            # This would require a script that applies token replacements
-            # from a JSON file to your parameters file
-          fi
-          
-          echo "Parameters file prepared: landing-zone-${{ matrix.subscription_name }}.parameters.json"
+          # List files to validate
+          echo "Landing Zone templates to validate:"
+          find ./landingzones -type f -name "*.bicep" | sort
 
-      # ===============================================================
-      # STEP 3: AZURE LOGIN
-      # ===============================================================
-      - name: Azure Login via OIDC
-        id: azure_login
+      - name: Lint Bicep files
+        run: |
+          # Run bicep linter on all files
+          for file in $(find ./landingzones -type f -name "*.bicep"); do
+            echo "Linting $file..."
+            az bicep build --file "$file" --stdout > /dev/null
+            if [ $? -ne 0 ]; then
+              echo "::error::Bicep linting failed for $file"
+              exit 1
+            fi
+          done
+          
+          echo "All Bicep files passed linting!"
+
+      # ==========================================================================
+      # AZURE LOGIN - CRITICAL CONFIGURATION
+      # ==========================================================================
+      # PROMPT GUIDANCE:
+      # - Always include subscription-id parameter
+      # - Management subscription is used for validation operations
+      # ==========================================================================
+      - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id:              ${{ env.AZURE_OIDC_CLIENT_ID }}
-          tenant-id:              ${{ env.AZURE_TENANT_ID }}
-          subscription-id:        ${{ matrix.subscription_id }}
-          allow-no-subscriptions: true
-          audience:               api://AzureADTokenExchange
-          subject:                repo:SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks:ref:refs/heads/main
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
 
-      # ===============================================================
-      # STEP 4: VALIDATE DEPLOYMENT
-      # ===============================================================
-      - name: Validate Bicep deployment
-        id: validate
+      - name: Determine landing zones to validate
+        id: landing-zones
         run: |
-          echo "Validating deployment for ${{ matrix.subscription_name }} subscription"
+          LANDING_ZONE="${{ github.event.inputs.landingZoneType }}"
           
-          az deployment sub validate \
-            --name "landing-zone-${{ matrix.subscription_name }}-validate" \
-            --location eastus \
-            --template-file landing-zone/landing-zone.bicep \
-            --parameters @landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
-          
-          echo "Validation successful!"
-
-      # ===============================================================
-      # STEP 5: DEPLOY LANDING ZONE
-      # ===============================================================
-      - name: Deploy landing-zone.bicep
-        id: deploy
-        run: |
-          echo "Deploying landing zone to ${{ matrix.subscription_name }} subscription"
-          
-          DEPLOYMENT_NAME="landing-zone-${{ matrix.subscription_name }}-${{ github.run_id }}"
-          
-          az deployment sub create \
-            --name "$DEPLOYMENT_NAME" \
-            --location eastus \
-            --template-file landing-zone/landing-zone.bicep \
-            --parameters @landing-zone/parameters/landing-zone-${{ matrix.subscription_name }}.parameters.json
-          
-          # Store the deployment name for use in later steps
-          echo "DEPLOYMENT_NAME=$DEPLOYMENT_NAME" >> $GITHUB_ENV
-          
-          echo "Deployment completed successfully: $DEPLOYMENT_NAME"
-
-      # ===============================================================
-      # STEP 6: VERIFY DEPLOYMENT
-      # ===============================================================
-      - name: Verify deployment
-        id: verify
-        run: |
-          echo "Verifying deployment for ${{ matrix.subscription_name }} subscription"
-          
-          # Get deployment status
-          DEPLOYMENT_STATUS=$(az deployment sub show \
-            --name "${{ env.DEPLOYMENT_NAME }}" \
-            --query "properties.provisioningState" -o tsv)
-          
-          if [ "$DEPLOYMENT_STATUS" == "Succeeded" ]; then
-            echo "✅ Deployment succeeded!"
-          else
-            echo "❌ Deployment failed with status: $DEPLOYMENT_STATUS"
-            exit 1
+          if [[ "$LANDING_ZONE" == "all" || -z "$LANDING_ZONE" ]]; then
+            LANDING_ZONES="analytics production"
+          elif [[ "$LANDING_ZONE" == "analytics-a2" ]]; then
+            LANDING_ZONES="analytics"
+          elif [[ "$LANDING_ZONE" == "production-p1" ]]; then
+            LANDING_ZONES="production"
           fi
-
-      # ===============================================================
-      # STEP 7: SUCCESS REPORTING
-      # ===============================================================
-      - name: Report success
-        if: success()
-        run: |
-          echo "✅ Successfully deployed landing zone to ${{ matrix.subscription_name }} subscription"
-          echo "Deployment Name: ${{ env.DEPLOYMENT_NAME }}"
-          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-      
-      # ===============================================================
-      # STEP 8: FAILURE REPORTING
-      # ===============================================================
-      - name: Report failure
-        if: failure()
-        run: |
-          echo "❌ Failed to deploy landing zone to ${{ matrix.subscription_name }} subscription"
-          echo "Please check the logs for details on the error."
-          echo "Common issues include:"
-          echo "  - Invalid parameters in the parameters file"
-          echo "  - Resource conflicts or naming conflicts"
-          echo "  - Insufficient permissions in the subscription"
-          echo "  - Exceeding quota limits"
-          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-
-      # ===============================================================
-      # STEP 9: DEPLOYMENT METADATA (ALWAYS RUNS)
-      # ===============================================================
-      - name: Record deployment metadata
-        if: always()
-        run: |
-          # Create a JSON record of this deployment attempt
-          cat << EOF > deployment-${{ matrix.subscription_name }}-metadata.json
-          {
-            "subscription": "${{ matrix.subscription_name }}",
-            "subscriptionId": "${{ matrix.subscription_id }}",
-            "deploymentName": "${{ env.DEPLOYMENT_NAME || 'unknown' }}",
-            "deploymentStatus": "${{ job.status }}",
-            "timestamp": "$(date -u +'%Y-%m-%d %H:%M:%S UTC')",
-            "runId": "${{ github.run_id }}",
-            "workflow": "${{ github.workflow }}",
-            "repository": "${{ github.repository }}",
-            "actor": "${{ github.actor }}",
-            "ref": "${{ github.ref }}"
-          }
-          EOF
           
-          echo "Deployment metadata recorded for ${{ matrix.subscription_name }}"
+          echo "LANDING_ZONES=$LANDING_ZONES" >> $GITHUB_ENV
+          echo "Selected landing zones for validation: $LANDING_ZONES"
+
+      - name: Validate Analytics Landing Zone
+        if: contains(env.LANDING_ZONES, 'analytics')
+        run: |
+          echo "Validating Analytics Landing Zone template..."
+          
+          # Create temporary resource group name for validation
+          TEMP_RG="validation-analytics-$(date +%s)"
+          
+          # Run what-if deployment
+          az deployment group what-if \
+            --resource-group $TEMP_RG \
+            --template-file landingzones/analytics/main.bicep \
+            --parameters landingZonePrefix=a2 \
+            --parameters environment=validation \
+            --parameters location=$VALIDATION_LOCATION \
+            --no-pretty-print > analytics-validation.txt
+          
+          echo "Analytics Landing Zone template validation complete"
+
+      - name: Validate Production Landing Zone
+        if: contains(env.LANDING_ZONES, 'production')
+        run: |
+          echo "Validating Production Landing Zone template..."
+          
+          # Create temporary resource group name for validation
+          TEMP_RG="validation-production-$(date +%s)"
+          
+          # Run what-if deployment
+          az deployment group what-if \
+            --resource-group $TEMP_RG \
+            --template-file landingzones/production/main.bicep \
+            --parameters landingZonePrefix=p1 \
+            --parameters environment=validation \
+            --parameters location=$VALIDATION_LOCATION \
+            --parameters enforceStrictSecurity=true \
+            --no-pretty-print > production-validation.txt
+          
+          echo "Production Landing Zone template validation complete"
+
+  # ==========================================================================
+  # POLICY COMPLIANCE JOB
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job checks if templates comply with organizational policy
+  # - Add custom policy checks based on your governance requirements
+  # - Consider integrating with third-party security scanners
+  # - Results can be posted as PR comments
+  # ==========================================================================
+  check-policy-compliance:
+    name: Check Policy Compliance
+    needs: validate-templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PowerShell modules
+        shell: pwsh
+        run: |
+          Install-Module -Name Az.Resources -Force -AllowClobber -Scope CurrentUser
+          Install-Module -Name PSRule.Rules.Azure -Force -AllowClobber -Scope CurrentUser
+          
+      # ==========================================================================
+      # AZURE LOGIN - CRITICAL CONFIGURATION
+      # ==========================================================================
+      # PROMPT GUIDANCE:
+      # - Always include subscription-id parameter
+      # - Use PowerShell session for policy evaluation
+      # ==========================================================================
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Run policy compliance checks
+        shell: pwsh
+        run: |
+          # Run PSRule for Azure policy checks
+          $landingZoneType = "${{ github.event.inputs.landingZoneType }}"
+          
+          if ($landingZoneType -eq "all" -or $landingZoneType -eq "") {
+            $folderPaths = @("./landingzones/analytics", "./landingzones/production")
+          }
+          elseif ($landingZoneType -eq "analytics-a2") {
+            $folderPaths = @("./landingzones/analytics")
+          }
+          elseif ($landingZoneType -eq "production-p1") {
+            $folderPaths = @("./landingzones/production")
+          }
+          
+          foreach ($path in $folderPaths) {
+            Write-Host "Running policy compliance checks on $path..."
+            
+            # Convert Bicep to ARM template for analysis
+            $bicepFiles = Get-ChildItem -Path $path -Filter "*.bicep" -Recurse
+            foreach ($file in $bicepFiles) {
+              $outputFile = $file.FullName -replace ".bicep$", ".json"
+              Write-Host "Converting $($file.Name) to ARM template..."
+              az bicep build --file $file.FullName --outfile $outputFile
+            }
+            
+            # Run PSRule analysis
+            $results = Get-ChildItem -Path $path -Filter "*.json" -Recurse |
+              Where-Object { $_.Name -notlike "*parameters.json" } |
+              Assert-PSRule -Module PSRule.Rules.Azure -As Summary
+              
+            $results | Format-Table -AutoSize
+          }
+          
+          # Generate summary
+          $summaryFile = "./policy-compliance-summary.md"
+          "## Azure Policy Compliance Summary`n" | Out-File -FilePath $summaryFile
+          "| Resource Type | Passed | Failed | Total |`n" | Out-File -FilePath $summaryFile -Append
+          "|-------------|--------|--------|-------|`n" | Out-File -FilePath $summaryFile -Append
+          
+          # Add results to summary file for PR comment
+          $results | ForEach-Object {
+            "| $($_.RuleName) | $($_.Pass) | $($_.Fail) | $($_.Total) |" | Out-File -FilePath $summaryFile -Append
+          }
+
+      - name: Post compliance summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const summaryContent = fs.readFileSync('./policy-compliance-summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summaryContent
+            });
+
+  # ==========================================================================
+  # FINAL VALIDATION STATUS
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job determines the overall validation result
+  # - Helps with quick visibility of pass/fail status
+  # - Add integration with other notification systems if needed
+  # ==========================================================================
+  validation-status:
+    name: Landing Zone Validation Status
+    needs: [validate-templates, check-policy-compliance]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Determine validation status
+        run: |
+          if [[ "${{ needs.validate-templates.result }}" == "success" && "${{ needs.check-policy-compliance.result }}" == "success" ]]; then
+            echo "VALIDATION_PASSED=true" >> $GITHUB_ENV
+            status="✅ All landing zone validations passed"
+          else
+            echo "VALIDATION_PASSED=false" >> $GITHUB_ENV
+            status="❌ Landing zone validation failed"
+          fi
+          
+          echo "Validation Status: $status"
+          
+          # Generate job summary
+          cat << EOF > $GITHUB_STEP_SUMMARY
+          ## Landing Zone CI Validation Results
+          
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Status:** $status
+          **Triggered by:** ${{ github.actor }}
+          
+          ### Component Status
+          
+          | Component | Status |
+          | --------- | ------ |
+          | Template Validation | ${{ needs.validate-templates.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Policy Compliance | ${{ needs.check-policy-compliance.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+          
+          See job logs for detailed validation results.
+          EOF
+
+      - name: Set status output
+        id: status
+        run: |
+          echo "passed=${{ env.VALIDATION_PASSED }}" >> $GITHUB_OUTPUT
+
+      - name: Exit with status
+        if: env.VALIDATION_PASSED != 'true'
+        run: |
+          echo "Validation failed! See job logs for details."
+          exit 1

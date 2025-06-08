@@ -1,26 +1,26 @@
 # ==========================================================================
-# Enterprise Azure Landing Zone - Landing Zone Resources Deployment
+# Enterprise Azure Landing Zone - Application Landing Zone Deployment
 # ==========================================================================
 # PROMPT ENGINEERING GUIDANCE:
-# This workflow deploys resources for application landing zones:
-# - Landing zone virtual networks with appropriate subnets
-# - Landing zone-specific policies
-# - Service connections to hub resources
-# - Initial bootstrap resources (KeyVault, Storage, etc)
+# This workflow deploys dedicated application landing zones in your enterprise
+# environment. A landing zone is a subscription with pre-configured policies, 
+# networking, and baseline services ready to host workloads.
 #
-# SECRETS CONFIGURATION:
+# LANDING ZONE TYPES SUPPORTED:
+# - Analytics (A2): For data analytics/warehousing workloads
+# - Production (P1): For production enterprise applications
+# 
+# REQUIRED SECRETS CONFIGURATION:
 # - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
 # - AZURE_CLIENT_ID: App registration client ID with federated credentials
 # - LANDINGZONE_A2_SUBSCRIPTION_ID: Analytics landing zone subscription
 # - LANDINGZONE_P1_SUBSCRIPTION_ID: Production landing zone subscription
-# - CONNECTIVITY_SUBSCRIPTION_ID: For hub network integration
+# - CONNECTIVITY_SUBSCRIPTION_ID: Hub network subscription (for peering)
 #
-# CUSTOMIZATION TIPS:
-# - Add/remove landing zone subscriptions as needed for your environments
-# - Ensure matching management group structure exists in Azure
-# - Configure landing zone policies to match your security requirements
+# CUSTOMIZATION TIP: Before deploying to production, first validate deployments
+# in a test environment by modifying the environment parameter.
 
-name: Deploy Landing Zone Resources
+name: Deploy Application Landing Zones
 
 on:
   push:
@@ -41,8 +41,8 @@ on:
           - production
           - nonproduction
           - development
-      landingZone:
-        description: 'Landing zone to deploy'
+      landingZoneType:
+        description: 'Landing zone type to deploy'
         required: true
         default: 'all'
         type: choice
@@ -56,18 +56,23 @@ on:
         default: 'eastus2'
         type: string
 
+# ==========================================================================
+# PERMISSIONS
+# PROMPT GUIDANCE: These are the minimum required permissions.
+# Do not increase permissions beyond what's needed for deployment.
+# ==========================================================================
 permissions:
-  id-token: write  # Required for OIDC federation
+  id-token: write  # Required for OIDC authentication
   contents: read   # Required to read repo files
 
 # ==========================================================================
-# ENVIRONMENT VARIABLES - MULTIPLE SUBSCRIPTION CONFIGURATION
+# ENVIRONMENT VARIABLES - LANDING ZONE SUBSCRIPTION MAPPING
 # ==========================================================================
 # PROMPT GUIDANCE:
-# - Landing zones use separate subscriptions based on workload type
-# - Each subscription needs a corresponding secret
-# - For shared components, the connectivity subscription is also needed
-# - Add additional subscription IDs as your landing zones grow
+# - Each landing zone type needs a corresponding subscription ID secret
+# - Add additional landing zone types by defining new subscription variables
+# - The connectivity subscription is needed for network integration
+# - Customize resource naming by adjusting the prefix variables
 # ==========================================================================
 env:
   # Authentication
@@ -78,22 +83,35 @@ env:
   LANDINGZONE_A2_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}
   LANDINGZONE_P1_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}
   
-  # Hub Network Subscription (for peering)
+  # Connectivity subscription for network integration
   CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
   
-  # Deployment parameters
+  # Deployment configuration
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+  
+  # Resource naming prefixes - customize for your organization
+  ANALYTICS_PREFIX: "a2"
+  PRODUCTION_PREFIX: "p1"
 
 jobs:
-  # First job verifies all required secrets exist
+  # ==========================================================================
+  # PREREQUISITE VERIFICATION
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job ensures all required secrets and inputs are properly configured
+  # - Early validation prevents failures during actual deployment
+  # - Add validation for new landing zone types if you add them
+  # ==========================================================================
   verify-prerequisites:
-    name: Verify Prerequisites
+    name: Verify Landing Zone Prerequisites
     runs-on: ubuntu-latest
     steps:
       - name: Check required secrets
         run: |
-          # Verify authentication secrets
+          echo "Verifying landing zone prerequisites..."
+          
+          # Authentication secrets
           if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
             echo "::error::AZURE_TENANT_ID secret is not set"
             exit 1
@@ -104,37 +122,291 @@ jobs:
             exit 1
           fi
           
-          # Determine which landing zones to verify based on input
-          SELECTED_LZ="${{ github.event.inputs.landingZone }}"
+          # Determine which landing zones need validation
+          LANDING_ZONE="${{ github.event.inputs.landingZoneType }}"
           
-          if [[ "$SELECTED_LZ" == "all" || "$SELECTED_LZ" == "analytics-a2" ]]; then
+          # Validate Analytics landing zone if selected
+          if [[ "$LANDING_ZONE" == "all" || "$LANDING_ZONE" == "analytics-a2" ]]; then
             if [ -z "${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}" ]; then
               echo "::error::LANDINGZONE_A2_SUBSCRIPTION_ID secret is not set"
               exit 1
+            else
+              echo "✓ Analytics landing zone subscription configured"
             fi
           fi
           
-          if [[ "$SELECTED_LZ" == "all" || "$SELECTED_LZ" == "production-p1" ]]; then
+          # Validate Production landing zone if selected
+          if [[ "$LANDING_ZONE" == "all" || "$LANDING_ZONE" == "production-p1" ]]; then
             if [ -z "${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}" ]; then
               echo "::error::LANDINGZONE_P1_SUBSCRIPTION_ID secret is not set"
               exit 1
+            else
+              echo "✓ Production landing zone subscription configured"
             fi
           fi
           
-          # Verify connectivity subscription for peering operations
+          # Validate connectivity subscription (for network peering)
           if [ -z "${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}" ]; then
-            echo "::warning::CONNECTIVITY_SUBSCRIPTION_ID secret is not set. Network peering operations may fail."
+            echo "::warning::CONNECTIVITY_SUBSCRIPTION_ID secret is not set, network peering will not be configured"
+          else
+            echo "✓ Connectivity subscription configured for network integration"
           fi
           
-          echo "All required secrets are configured for selected landing zones."
-          
-          # Set subscription variables for downstream jobs based on selection
-          if [[ "$SELECTED_LZ" == "analytics-a2" ]]; then
-            echo "TARGET_SUBSCRIPTION_ID=${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
-            echo "TARGET_LANDING_ZONE=analytics-a2" >> $GITHUB_ENV
-          elif [[ "$SELECTED_LZ" == "production-p1" ]]; then
-            echo "TARGET_SUBSCRIPTION_ID=${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
-            echo "TARGET_LANDING_ZONE=production-p1" >> $GITHUB_ENV
-          fi
+          echo "All required secrets validated for $LANDING_ZONE deployment"
 
-  # Additional landing-zone-specific deployment jobs would follow...
+  # ==========================================================================
+  # ANALYTICS LANDING ZONE DEPLOYMENT
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job deploys the Analytics (A2) landing zone
+  # - Only runs if 'all' or 'analytics-a2' is selected
+  # - Customize Bicep parameters based on analytics requirements
+  # - Consider data residency and compliance requirements
+  # ==========================================================================
+  deploy-analytics:
+    name: Deploy Analytics Landing Zone
+    needs: verify-prerequisites
+    runs-on: ubuntu-latest
+    if: github.event.inputs.landingZoneType == 'all' || github.event.inputs.landingZoneType == 'analytics-a2'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ==========================================================================
+      # AZURE LOGIN - CRITICAL CONFIGURATION
+      # ==========================================================================
+      # PROMPT GUIDANCE:
+      # - Always specify subscription-id for azure/login action
+      # - This prevents the "no subscription" error we saw earlier
+      # - Use the specific landing zone subscription for this deployment
+      # ==========================================================================
+      - name: Login to Azure (Analytics Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.LANDINGZONE_A2_SUBSCRIPTION_ID }}
+
+      - name: Create Analytics Resource Group
+        run: |
+          RESOURCE_GROUP="rg-${ANALYTICS_PREFIX}-landingzone-${{ env.ENVIRONMENT }}"
+          echo "Creating Analytics Landing Zone resource group: $RESOURCE_GROUP"
+          
+          az group create \
+            --name $RESOURCE_GROUP \
+            --location ${{ env.LOCATION }} \
+            --tags environment=${{ env.ENVIRONMENT }} landingZoneType=analytics
+          
+          echo "ANALYTICS_RG=$RESOURCE_GROUP" >> $GITHUB_ENV
+
+      - name: Deploy Analytics Landing Zone Infrastructure
+        run: |
+          echo "Deploying Analytics Landing Zone infrastructure..."
+          
+          # Get hub VNet ID for peering (if connectivity subscription is configured)
+          if [ -n "${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}" ]; then
+            echo "Retrieving hub network information for peering..."
+            
+            # Login to connectivity subscription to get hub VNet ID
+            az login --service-principal \
+              --username ${{ env.AZURE_CLIENT_ID }} \
+              --tenant ${{ env.AZURE_TENANT_ID }} \
+              --allow-no-subscriptions
+              
+            az account set --subscription ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+            
+            HUB_VNET_ID=$(az network vnet show \
+              --resource-group "rg-connectivity-hub" \
+              --name "vnet-hub" \
+              --query id -o tsv)
+              
+            # Switch back to analytics subscription
+            az account set --subscription ${{ env.LANDINGZONE_A2_SUBSCRIPTION_ID }}
+            
+            echo "Hub VNet ID: $HUB_VNET_ID"
+            PEERING_PARAM="--parameters hubVnetId=$HUB_VNET_ID"
+          else
+            echo "No connectivity subscription configured, skipping VNet peering"
+            PEERING_PARAM=""
+          fi
+          
+          # Deploy the landing zone
+          az deployment group create \
+            --name "analytics-landingzone-$(date +%Y%m%d%H%M%S)" \
+            --resource-group ${{ env.ANALYTICS_RG }} \
+            --template-file landingzones/analytics/main.bicep \
+            --parameters landingZonePrefix=${{ env.ANALYTICS_PREFIX }} \
+            --parameters environment=${{ env.ENVIRONMENT }} \
+            --parameters location=${{ env.LOCATION }} \
+            $PEERING_PARAM
+
+  # ==========================================================================
+  # PRODUCTION LANDING ZONE DEPLOYMENT
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job deploys the Production (P1) landing zone
+  # - Only runs if 'all' or 'production-p1' is selected
+  # - Configure stronger security policies for production
+  # - Ensure proper network isolation and secure defaults
+  # ==========================================================================
+  deploy-production:
+    name: Deploy Production Landing Zone
+    needs: verify-prerequisites
+    runs-on: ubuntu-latest
+    if: github.event.inputs.landingZoneType == 'all' || github.event.inputs.landingZoneType == 'production-p1'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ==========================================================================
+      # AZURE LOGIN - CRITICAL CONFIGURATION
+      # ==========================================================================
+      # PROMPT GUIDANCE:
+      # - Always specify subscription-id for azure/login action
+      # - This prevents the "no subscription" error we saw earlier
+      # - Use the specific landing zone subscription for this deployment
+      # ==========================================================================
+      - name: Login to Azure (Production Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.LANDINGZONE_P1_SUBSCRIPTION_ID }}
+
+      - name: Create Production Resource Group
+        run: |
+          RESOURCE_GROUP="rg-${PRODUCTION_PREFIX}-landingzone-${{ env.ENVIRONMENT }}"
+          echo "Creating Production Landing Zone resource group: $RESOURCE_GROUP"
+          
+          az group create \
+            --name $RESOURCE_GROUP \
+            --location ${{ env.LOCATION }} \
+            --tags environment=${{ env.ENVIRONMENT }} landingZoneType=production
+          
+          echo "PRODUCTION_RG=$RESOURCE_GROUP" >> $GITHUB_ENV
+
+      - name: Deploy Production Landing Zone Infrastructure
+        run: |
+          echo "Deploying Production Landing Zone infrastructure..."
+          
+          # Get hub VNet ID for peering (if connectivity subscription is configured)
+          if [ -n "${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}" ]; then
+            echo "Retrieving hub network information for peering..."
+            
+            # Login to connectivity subscription to get hub VNet ID
+            az login --service-principal \
+              --username ${{ env.AZURE_CLIENT_ID }} \
+              --tenant ${{ env.AZURE_TENANT_ID }} \
+              --allow-no-subscriptions
+              
+            az account set --subscription ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+            
+            HUB_VNET_ID=$(az network vnet show \
+              --resource-group "rg-connectivity-hub" \
+              --name "vnet-hub" \
+              --query id -o tsv)
+              
+            # Switch back to production subscription
+            az account set --subscription ${{ env.LANDINGZONE_P1_SUBSCRIPTION_ID }}
+            
+            echo "Hub VNet ID: $HUB_VNET_ID"
+            PEERING_PARAM="--parameters hubVnetId=$HUB_VNET_ID"
+          else
+            echo "No connectivity subscription configured, skipping VNet peering"
+            PEERING_PARAM=""
+          fi
+          
+          # Deploy the landing zone
+          az deployment group create \
+            --name "prod-landingzone-$(date +%Y%m%d%H%M%S)" \
+            --resource-group ${{ env.PRODUCTION_RG }} \
+            --template-file landingzones/production/main.bicep \
+            --parameters landingZonePrefix=${{ env.PRODUCTION_PREFIX }} \
+            --parameters environment=${{ env.ENVIRONMENT }} \
+            --parameters location=${{ env.LOCATION }} \
+            --parameters enforceStrictSecurity=true \
+            $PEERING_PARAM
+
+  # ==========================================================================
+  # DEPLOYMENT SUMMARY REPORT
+  # ==========================================================================
+  # PROMPT GUIDANCE:
+  # - This job creates a summary of what was deployed
+  # - Always runs, even if previous jobs fail (using 'if: always()')
+  # - Useful for documenting what changed in each run
+  # - Add GitHub step summary for clean reporting
+  # ==========================================================================
+  generate-report:
+    name: Generate Deployment Report
+    needs: [verify-prerequisites, deploy-analytics, deploy-production]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Generate deployment summary
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          LANDING_ZONE="${{ github.event.inputs.landingZoneType }}"
+          
+          # Output summary to GitHub step summary
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          ## Landing Zone Deployment Summary
+          
+          **Deployment Date:** ${TIMESTAMP}
+          **Triggered By:** ${{ github.actor }}
+          **Environment:** ${{ env.ENVIRONMENT }}
+          **Region:** ${{ env.LOCATION }}
+          **Landing Zones:** ${LANDING_ZONE}
+          
+          ### Deployment Results
+          
+          | Landing Zone | Status | Subscription |
+          | ------------ | ------ | ------------ |
+          EOF
+          
+          # Add Analytics results if included
+          if [[ "$LANDING_ZONE" == "all" || "$LANDING_ZONE" == "analytics-a2" ]]; then
+            ANALYTICS_STATUS="${{ needs.deploy-analytics.result }}"
+            ANALYTICS_SUB_ID="${{ env.LANDINGZONE_A2_SUBSCRIPTION_ID }}"
+            ANALYTICS_SUB_SHORT="${ANALYTICS_SUB_ID:0:8}...${ANALYTICS_SUB_ID: -4}"
+            
+            if [[ "$ANALYTICS_STATUS" == "success" ]]; then
+              echo "| Analytics (A2) | ✅ Success | ${ANALYTICS_SUB_SHORT} |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Analytics (A2) | ❌ Failed | ${ANALYTICS_SUB_SHORT} |" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          # Add Production results if included
+          if [[ "$LANDING_ZONE" == "all" || "$LANDING_ZONE" == "production-p1" ]]; then
+            PRODUCTION_STATUS="${{ needs.deploy-production.result }}"
+            PRODUCTION_SUB_ID="${{ env.LANDINGZONE_P1_SUBSCRIPTION_ID }}"
+            PRODUCTION_SUB_SHORT="${PRODUCTION_SUB_ID:0:8}...${PRODUCTION_SUB_ID: -4}"
+            
+            if [[ "$PRODUCTION_STATUS" == "success" ]]; then
+              echo "| Production (P1) | ✅ Success | ${PRODUCTION_SUB_SHORT} |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Production (P1) | ❌ Failed | ${PRODUCTION_SUB_SHORT} |" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          # Add next steps
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          
+          ### Next Steps
+          
+          1. Verify resources in the Azure Portal
+          2. Review network connections and peering status
+          3. Validate security policies and compliance settings
+          4. Review logs in Log Analytics workspace
+          
+          For any issues, check the job logs above for detailed error messages.
+          EOF
