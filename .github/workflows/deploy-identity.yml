@@ -1,29 +1,41 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
-# PROMPT ENGINEERING GUIDANCE:
-# This workflow provisions core identity resources for a cloud-only enterprise landing zone.
+# 
+# 🔴 GITHUB ACTIONS CONDITIONAL SYNTAX - DEFINITIVE GUIDE 🔴
+# 
+# 📌 JOB-LEVEL CONDITIONS:
+#    ✓ CORRECT: if: github.event_name == 'push'
+#    ✓ CORRECT: if: github.ref == 'refs/heads/main'
+#    ✓ CORRECT: if: contains(github.event.head_commit.message, 'deploy')
+#    ✓ CORRECT: if: startsWith(github.ref, 'refs/tags/')
+#    ✓ CORRECT: if: success()
 #
-# 🛑 GITHUB ACTIONS CONDITIONAL SYNTAX RULES 🛑
-# ==============================================
+#    ❌ WRONG: if: ${{ github.event_name == 'push' }}
+#    ❌ WRONG: if: "${{ env.DEPLOY_FLAG == 'true' }}"
 #
-# ⚠️ Different locations require different syntax patterns! ⚠️
+# 📌 ENVIRONMENT VARIABLES IN JOB-LEVEL CONDITIONS:
+#    ✓ CORRECT: if: vars.DEPLOY_FLAG == 'true'    (GitHub Variables)
+#    ✓ CORRECT: if: env.DEPLOY_FLAG == 'true'     (Environment variables defined in env:)
 #
-# 1️⃣ JOB-LEVEL CONDITIONALS:
-#    ✅ if: env.VAR == 'value'               (CORRECT: no curly braces)
-#    ❌ if: ${{ env.VAR == 'value' }}        (WRONG: has curly braces)
+#    ❌ WRONG: if: ${{ env.DEPLOY_FLAG == 'true' }}
+#    ❌ WRONG: if: ${{ vars.DEPLOY_FLAG == 'true' }}
 #
-# 2️⃣ STEP-LEVEL CONDITIONALS:
-#    ✅ if: ${{ steps.check.outputs.result == 'success' }}    (CORRECT: has curly braces)
-#    ❌ if: steps.check.outputs.result == 'success'           (WRONG: no curly braces)
+# 📌 STEP-LEVEL CONDITIONS:
+#    ✓ CORRECT: if: ${{ github.event_name == 'push' }}
+#    ✓ CORRECT: if: ${{ steps.check.outputs.result == 'pass' }}
+#    ✓ CORRECT: if: ${{ env.DEPLOY_FLAG == 'true' }}
 #
-# 3️⃣ SHELL SCRIPT VARIABLES:
-#    ✅ if [ "${{ env.VAR }}" == "true" ]    (CORRECT: has curly braces)
-#    ❌ if [ "env.VAR" == "true" ]           (WRONG: no curly braces)
+#    ❌ WRONG: if: github.event_name == 'push'
+#    ❌ WRONG: if: steps.check.outputs.result == 'pass'
 #
-# 4️⃣ WORKFLOW STRUCTURE RULE:
-#    • At least one job MUST have no dependencies (no "needs" parameter)
-# ==============================================
+# 📌 SHELL SCRIPT VARIABLES:
+#    ✓ CORRECT: if [ "${{ env.DEPLOY_FLAG }}" == "true" ]
+#    ✓ CORRECT: echo "${{ github.repository }}"
+#
+#    ❌ WRONG: if [ "env.DEPLOY_FLAG" == "true" ]
+#    ❌ WRONG: echo "github.repository"
+# ==========================================================================
 
 name: Provision Identity
 
@@ -61,6 +73,7 @@ permissions:
   id-token: write  # Required for OIDC federation
   contents: read   # Required to read repo files
 
+# These environment variables are used throughout the workflow
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -69,19 +82,17 @@ env:
   RESOURCE_GROUP_NAME: rg-identity
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+  # The deployAadds input is converted to a string 'true' or 'false'
+  # This is important because GitHub Actions conditions compare strings
   DEPLOY_AADDS: ${{ github.event.inputs.deployAadds || 'true' }}
 
 jobs:
   # ==========================================================================
-  # VERIFY PREREQUISITES JOB - WORKFLOW ENTRY POINT
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - This job has NO "needs" parameter - required as the workflow entry point
-  # - Every GitHub Actions workflow MUST have at least one job without dependencies
+  # VERIFY PREREQUISITES - Entry point job with no dependencies
   # ==========================================================================
   verify-prerequisites:
     name: Verify Prerequisites
-    # No "needs" parameter here - this is the workflow entry point
+    # No "needs" parameter here - every workflow must have at least one job without dependencies
     runs-on: ubuntu-latest
     outputs:
       tenant_id: ${{ steps.output_params.outputs.tenant_id }}
@@ -130,6 +141,13 @@ jobs:
           fi
           
           echo "Azure connectivity verified successfully."
+      
+      # Debug information about variables and expressions
+      - name: Debug environment variables
+        run: |
+          echo "DEPLOY_AADDS value: ${{ env.DEPLOY_AADDS }}"
+          echo "Type of DEPLOY_AADDS: string"
+          echo "Raw input value: ${{ github.event.inputs.deployAadds }}"
           
       - name: Set output parameters
         id: output_params
@@ -137,11 +155,7 @@ jobs:
           echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
 
   # ==========================================================================
-  # DEPLOY IDENTITY INFRASTRUCTURE JOB
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - This job depends on verify-prerequisites job completion
-  # - Resource group and networks must be deployed before identity services
+  # DEPLOY IDENTITY INFRASTRUCTURE
   # ==========================================================================
   deploy-identity-infrastructure:
     name: Deploy Identity Infrastructure
@@ -177,11 +191,9 @@ jobs:
         run: |
           echo "Deploying identity network infrastructure..."
           
-          # Check if identity network template exists
+          # Create identity network template if it doesn't exist
           if [ ! -f "identity/network/identity-network.bicep" ]; then
-            echo "::warning::identity-network.bicep not found. Creating minimal network template."
-            
-            # Create a minimal identity network Bicep file if it doesn't exist
+            echo "Creating identity network template..."
             mkdir -p identity/network
             cat > identity/network/identity-network.bicep << 'EOF'
             // Identity Network for cloud-only deployment
@@ -269,11 +281,7 @@ jobs:
           echo "Identity network deployed successfully."
 
   # ==========================================================================
-  # DEPLOY KEY VAULT JOB
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - Key Vault with private endpoint for secure secret storage
-  # - Access policies align with least-privilege principles
+  # DEPLOY KEY VAULT
   # ==========================================================================
   deploy-key-vault:
     name: Deploy Key Vault
@@ -320,7 +328,7 @@ jobs:
               --registration-enabled false
           fi
           
-          # Check if Key Vault template exists
+          # Create Key Vault template if it doesn't exist
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
             mkdir -p identity/key-vault
             cat > identity/key-vault/key-vault.bicep << 'EOF'
@@ -426,11 +434,7 @@ jobs:
           echo "Key Vault deployed successfully."
 
   # ==========================================================================
-  # DEPLOY MANAGED IDENTITIES JOB
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - Managed identities for workload authentication
-  # - User-assigned identities for better control and lifecycle management
+  # DEPLOY MANAGED IDENTITIES
   # ==========================================================================
   deploy-managed-identities:
     name: Deploy Managed Identities
@@ -452,10 +456,8 @@ jobs:
         run: |
           echo "Deploying managed identities..."
           
-          # Create a directory for managed identities if it doesn't exist
-          mkdir -p identity/managed-identity
-          
           # Create template file if it doesn't exist
+          mkdir -p identity/managed-identity
           if [ ! -f "identity/managed-identity/managed-identities.bicep" ]; then
             cat > identity/managed-identity/managed-identities.bicep << 'EOF'
             // User-assigned managed identities for workloads
@@ -513,19 +515,19 @@ jobs:
           echo "Managed identities deployed successfully."
 
   # ==========================================================================
-  # DEPLOY AZURE AD DOMAIN SERVICES JOB
+  # DEPLOY AZURE AD DOMAIN SERVICES
   # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - Azure AD DS provides managed domain services for a cloud-only environment
-  # - Only deployed if specifically requested (costly service)
-  # - CRITICAL FIX ON LINE 528: Job-level conditionals MUST use simplified syntax
+  # CRITICALLY IMPORTANT: The correct syntax for job-level conditions:
+  # 1. They DO NOT use expression syntax (${{ }})
+  # 2. They use direct references to variables
+  # 3. String comparison needs single quotes
   # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
     needs: deploy-identity-infrastructure
     runs-on: ubuntu-latest
-    
-    # ⚠️ LINE 528 FIX: Job-level conditionals must NOT use ${{ }} braces ⚠️
+    # CORRECT SYNTAX: No expression syntax ${{ }} for job-level conditions
+    # Compare to a string literal 'true' since env vars are always strings
     if: env.DEPLOY_AADDS == 'true'
     
     steps:
@@ -543,10 +545,8 @@ jobs:
         run: |
           echo "Deploying Azure AD Domain Services..."
           
-          # Create directory if it doesn't exist
+          # Create AADDS template if it doesn't exist
           mkdir -p identity/aadds
-          
-          # Create template file if it doesn't exist
           if [ ! -f "identity/aadds/aadds.bicep" ]; then
             cat > identity/aadds/aadds.bicep << 'EOF'
             // Azure AD Domain Services for cloud-only environment
@@ -678,17 +678,13 @@ jobs:
           echo "Note: AADDS deployment can take 1-2 hours to complete."
 
   # ==========================================================================
-  # VERIFY IDENTITY RESOURCES JOB
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - Verify all deployed resources at the end of the workflow
-  # - Create summary report for easy validation
-  # - Show diagnostic information for any failures
+  # VERIFY IDENTITY RESOURCES
   # ==========================================================================
   verify-identity-resources:
     name: Verify Identity Resources
     needs: [deploy-key-vault, deploy-managed-identities]
-    # Using "always()" to run even if some jobs fail
+    # always() ensures this job runs even if previous jobs fail
+    # Note: This is a function call, not a variable reference, so no quotes needed
     if: always()
     runs-on: ubuntu-latest
     
@@ -745,7 +741,7 @@ jobs:
             echo "❌ Managed identities not found"
           fi
           
-          # Note: Using proper variable reference syntax in shell scripts
+          # Note syntax: Shell script conditionals properly use ${{ }} for variables
           if [ "${{ env.DEPLOY_AADDS }}" == "true" ]; then
             if az resource list \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -757,17 +753,19 @@ jobs:
               echo "❓ Azure AD Domain Services not found yet (deployment may still be in progress)"
             fi
           fi
-          
-          # Generate summary report
+      
+      - name: Create deployment report
+        run: |
+          # Generate summary report with GitHub formatting
           cat << EOF > $GITHUB_STEP_SUMMARY
-          # Identity Resources Deployment Results
-          
+          # 🔒 Identity Resources Deployment Report
+
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time UTC:** $(date -u +"%Y-%m-%d %H:%M:%S")
+          **Date/Time (UTC):** $(date -u +"%Y-%m-%d %H:%M:%S")
           
-          ## Deployed Resources
+          ## 📊 Deployed Resources
           
           | Resource Type | Status |
           |--------------|--------|
@@ -776,13 +774,21 @@ jobs:
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ env.DEPLOY_AADDS }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📋 GitHub Actions Syntax Rules - Quick Reference
+          ## 📝 GitHub Actions Conditional Syntax - DEFINITIVE REFERENCE
           
-          | Location | ✅ Correct Syntax | ❌ Incorrect Syntax | Notes |
-          |----------|----------------|------------------|-------|
-          | Job-level if | \`if: env.VAR == 'true'\` | \`if: \${{ env.VAR == 'true' }}\` | No braces in job conditionals |
-          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | \`if: steps.id.outputs.value == 'true'\` | Braces required in step conditionals |
-          | Shell scripts | \`if [ "\${{ env.VAR }}" == "true" ]\` | \`if [ "env.VAR" == "true" ]\` | Braces required for variable references |
+          | Context | ✅ Correct Syntax | ❌ Incorrect Syntax |
+          |---------|-----------------|-------------------|
+          | Job-level conditions | \`if: env.VAR == 'true'\` | \`if: \${{ env.VAR == 'true' }}\` |
+          | Step-level conditions | \`if: \${{ steps.id.outputs.value == 'true' }}\` | \`if: steps.id.outputs.value == 'true'\` |
+          | Shell script variables | \`if [ "\${{ env.VAR }}" == "true" ]\` | \`if [ "env.VAR" == "true" ]\` |
+          | Output reference | \`\${{ needs.job_id.outputs.output_name }}\` | \`needs.job_id.outputs.output_name\` |
           
-          Deployment completed by: GEP-V at: 2025-06-08 16:49:09 UTC
+          ## 📋 Next Steps
+          
+          1. Confirm Azure AD Domain Services provisioning (may take 1-2 hours)
+          2. Configure workload identities with appropriate RBAC permissions
+          3. Set up Key Vault access policies for applications
+          
+          Deployment by: GEP-V  
+          Report generated at: 2025-06-08 16:53:26 UTC
           EOF
