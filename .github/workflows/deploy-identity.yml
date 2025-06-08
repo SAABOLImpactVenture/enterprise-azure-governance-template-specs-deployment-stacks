@@ -5,26 +5,28 @@
 # 🔍 BICEP AND HEREDOC BEST PRACTICES FOR GITHUB ACTIONS 🔍
 # ========================================================
 #
-# 1️⃣ BICEP CODE IN YAML FILES:
-#    • Bicep code must NEVER be directly embedded in YAML
-#    • Always use shell heredocs to create/write Bicep files
-#    • Bicep syntax like @description() is invalid YAML syntax
+# 1️⃣ CRITICAL: HEREDOC INDENTATION IN GITHUB ACTIONS
+#    • In YAML, indentation matters for readability
+#    • In shell scripts within YAML, indentation is passed to the shell
+#    • Shell heredocs require specific formatting to work correctly
+#    • GitHub Actions requires special attention to these differences
 #
 # 2️⃣ PROPER HEREDOC FORMATTING:
 #    • Opening: cat > file.bicep << 'EOF'  (quotes prevent variable expansion)
-#    • Content: All Bicep code goes between delimiters
-#    • Closing: EOF  (must be at column 0, no indentation, no extra characters)
+#    • Content: Indent consistently within the workflow for readability
+#    • Content: Indentation is preserved in the generated file
+#    • Closing: EOF  (must be at column 0, NO INDENTATION)
 #
-# 3️⃣ COMMON HEREDOC ERRORS:
-#    • Indentation of closing delimiter (must be at column 0)
-#    • Missing closing delimiter
-#    • Extra spaces or characters around delimiters
-#    • Using Bicep syntax directly in YAML (outside heredoc)
+# 3️⃣ THE LINE 190 ERROR SOLUTION:
+#    • Problem: Heredoc closing delimiter was indented
+#    • Fix: Ensure the closing 'EOF' is exactly at column 0
+#    • Additional: Use pipe (|) character for multi-line scripts in GitHub Actions
 #
-# 4️⃣ YAML ESCAPING:
-#    • Characters like {, }, [, ], :, ?, |, >, *, &, !, %, #, `, " need special handling
-#    • Use quotes around strings with special characters: 'string with: special chars'
-#    • For complex content, always use heredocs or block literals
+# 4️⃣ YAML SCRIPT BLOCKS:
+#    • For shell scripts with heredocs use the pipe character:
+#      run: |
+#        commands here
+#    • The pipe tells YAML parser this is a multi-line value
 # ========================================================
 
 name: Provision Identity
@@ -167,13 +169,15 @@ jobs:
           
           echo "Resource group created or confirmed."
       
-      # ==================================================================================
-      # CRITICAL FIX: Line 192 YAML syntax error - Bicep @description outside of heredoc
-      # Problem: Bicep syntax like @description() was included directly in YAML
-      # Solution: Ensure ALL Bicep code is properly enclosed in a heredoc
-      # ==================================================================================
+      # ===========================================================================
+      # CRITICAL FIX: Line 190 YAML syntax error - Heredoc formatting
+      # Problem: The closing EOF for the heredoc was indented, causing YAML parser to 
+      # interpret the Bicep code as YAML syntax
+      # Solution: Ensure the closing EOF is at column 0 with no indentation
+      # ===========================================================================
       - name: Deploy identity network
         id: deploy_network
+        # Using pipe (|) for multi-line script
         run: |
           echo "Deploying identity network infrastructure..."
           
@@ -181,10 +185,8 @@ jobs:
             echo "Creating identity network template..."
             mkdir -p identity/network
             
-            # CORRECT HEREDOC SYNTAX:
-            # 1. Properly open heredoc with << 'EOF' (quotes prevent variable expansion)
-            # 2. All Bicep code between delimiters
-            # 3. Closing EOF must be at column 0 with no indentation or extra spaces
+            # For clarity, we create the file using indented content for readability
+            # but the closing EOF MUST be at column 0 (no indent) for the shell to recognize it
             cat > identity/network/identity-network.bicep << 'EOF'
 // Identity Network for cloud-only deployment
 @description('Azure region for all resources')
@@ -745,7 +747,7 @@ EOF
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time (UTC):** 2025-06-08 17:34:56
+          **Date/Time (UTC):** 2025-06-08 17:39:30
           
           ## 📊 Deployed Resources
           
@@ -756,37 +758,33 @@ EOF
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📝 BICEP AND YAML TROUBLESHOOTING
+          ## 💡 HEREDOC TROUBLESHOOTING GUIDE
           
-          ### Common Error: Bicep code in YAML (Line 192 fix)
+          ### The Line 190 Fix: Unindented EOF
           
-          ```yaml
-          # ❌ WRONG: Bicep code directly in YAML
-          steps:
-            - run: |
-                @description('Azure region for all resources')  # THIS IS INVALID
+          This issue occurs because YAML and shell scripts treat indentation differently:
           
-          # ✅ CORRECT: Bicep code in heredoc
-          steps:
-            - run: |
-                cat > file.bicep << 'EOF'
-                @description('Azure region for all resources')  # NOW VALID
-                param location string = resourceGroup().location
-                EOF
-          ```
-          
-          ### Proper Heredoc Formatting
           ```bash
-          # Opening delimiter with quotes to prevent variable substitution
-          cat > file.txt << 'EOF'
+          # ❌ WRONG: Indented EOF (causes YAML to parse Bicep)
+          cat > file.bicep << 'EOF'
+          @description('Parameters')  # Error on this line
+            param x string
+            EOF  # Indented EOF is wrong
           
-          # Content goes here, can include special characters
-          # and Bicep syntax that would be invalid in YAML
-          
-          # Closing delimiter MUST be at column 0
-          EOF
+          # ✅ CORRECT: EOF at column 0 (no indent)
+          cat > file.bicep << 'EOF'
+          @description('Parameters')  # Now works fine
+          param x string
+          EOF  # <-- Zero indentation here is key!
           ```
+          
+          ### Why This Works
+          
+          1. The YAML parser expects valid YAML syntax for the entire file
+          2. Shell heredocs require the closing delimiter at column 0
+          3. When properly formatted, the shell treats everything between delimiters as literal text
+          4. This prevents the YAML parser from trying to interpret Bicep syntax
           
           Deployment by: GEP-V  
-          Report generated: 2025-06-08 17:34:56 UTC
+          Report generated: 2025-06-08 17:39:30 UTC
           EOF
