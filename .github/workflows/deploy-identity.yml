@@ -15,17 +15,11 @@
 # - PaaS services protected with private endpoints
 # - Network integration with hub-spoke model
 #
-# SECRETS CONFIGURATION:
-# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
-# - AZURE_CLIENT_ID: App registration client ID with federated credentials
-# - IDENTITY_SUBSCRIPTION_ID: Dedicated subscription for identity resources
-# - CONNECTIVITY_SUBSCRIPTION_ID: Required for DNS integration
-#
-# CUSTOMIZATION TIPS:
-# - Adjust resource naming in parameters files to match your standards
-# - Configure Azure AD DS settings based on your directory requirements
-# - Consider security and compliance requirements for KeyVault configuration
-# - Implement privileged identity management for admin access
+# ERROR PREVENTION TIPS:
+# 1. Always use ${{ }} syntax when referencing environment variables in conditionals
+# 2. Ensure all job dependencies are correctly specified
+# 3. Verify secret names match what's configured in GitHub repository settings
+# 4. Validate Bicep templates locally before committing
 
 name: Deploy Identity Resources
 
@@ -408,7 +402,7 @@ jobs:
       
       # Set up VNet peering if connectivity subscription is available
       - name: Set up VNet peering to hub
-        if: env.CONNECTIVITY_SUBSCRIPTION_ID != ''
+        if: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID != '' }}  # Proper syntax for env var in conditional
         run: |
           echo "Setting up VNet peering to hub network..."
           
@@ -662,15 +656,16 @@ jobs:
   # - Only deployed if specifically requested (costly service)
   # - Requires careful network configuration and security groups
   # - SKU selection based on directory size and performance needs
+  # - CRITICAL FIX: Always use ${{ }} syntax for environment variables in conditionals
   # ==========================================================================
   deploy-aadds:
     name: Deploy Azure AD Domain Services
     needs: [deploy-identity-infrastructure, deploy-key-vault]
     runs-on: ubuntu-latest
-    # Replace line 670 with:
-  if: ${{ env.DEPLOY_AADDS == 'true' }}
+    # FIX: Added ${{ }} around env variable reference in conditional
+    if: ${{ env.DEPLOY_AADDS == 'true' }}
     
-  steps:
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
@@ -974,6 +969,7 @@ jobs:
   # - Documentation shows what was deployed and where
   # - Helps in troubleshooting deployment issues
   # - Provides clear next steps for users of the identity services
+  # - Always verify both resource existence and configuration
   # ==========================================================================
   verify-resources:
     name: Verify Identity Resources
