@@ -2,25 +2,29 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
 #
-# 📝 HEREDOC FORMATTING IN YAML - DEFINITIVE GUIDE 📝
+# 📘 YAML & HEREDOC GUIDELINES FOR GITHUB ACTIONS 📘
 # ==========================================================
 #
-# 🚫 COMMON HEREDOC ERRORS IN YAML:
-#   1. Indentation issues with closing delimiter
-#   2. Missing or unbalanced quotes around opening delimiter
-#   3. Extra spaces or characters before closing delimiter
-#   4. Improper quoting of special characters inside content
+# 1️⃣ HEREDOC IN YAML - CRITICAL RULES
+#   • Opening delimiter: cat > file.txt << 'EOF'
+#     - Use quotes around 'EOF' to prevent variable substitution
+#   
+#   • Closing delimiter: EOF
+#     - MUST be at beginning of line with ZERO indentation
+#     - NO spaces or characters after the delimiter
+#     - Must exactly match the opening delimiter (case sensitive)
 #
-# ✅ CORRECT HEREDOC SYNTAX:
-#   cat > file.txt << 'EOF'
-#   content
-#   EOF
+# 2️⃣ COMMON HEREDOC ERRORS IN YAML
+#   • Indentation of closing delimiter (must be at column 0)
+#   • Missing closing delimiter entirely
+#   • Trailing spaces after closing delimiter
+#   • Comments or characters on the same line as closing delimiter
+#   • Mismatched case between opening and closing delimiter
 #
-# 🔑 CRITICAL RULES:
-#   1. Use quotes for opening delimiter to prevent variable substitution
-#   2. Closing delimiter (EOF) MUST be at beginning of line with NO indentation
-#   3. No trailing spaces or characters after the closing delimiter
-#   4. Content indentation inside heredoc should be intentional
+# 3️⃣ FORMATTING MULTI-LINE STRINGS IN YAML
+#   • Block scalars: |  (preserves newlines) or >  (folds newlines)
+#   • Heredocs: << 'EOF' ... EOF  (shell script)
+#   • Always consider readability and syntax requirements
 # ==========================================================
 
 name: Provision Identity
@@ -164,11 +168,11 @@ jobs:
           echo "Resource group created or confirmed."
       
       # ===========================================================================
-      # CRITICAL FIX: Line 195 YAML syntax error - Heredoc formatting
+      # CRITICAL FIX: Line 188 YAML syntax error - Heredoc formatting
       # Common errors with heredocs:
       # 1. Indentation issues with closing delimiter
       # 2. Missing or mismatched quotes around the opening delimiter
-      # 3. Extra spaces before the closing delimiter
+      # 3. Extra spaces before or after the closing delimiter
       # ===========================================================================
       - name: Deploy identity network
         id: deploy_network
@@ -319,6 +323,8 @@ EOF
           # Check if Key Vault template exists
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
             mkdir -p identity/key-vault
+            
+            # Using proper heredoc formatting - closing EOF MUST be at column 0
             cat > identity/key-vault/key-vault.bicep << 'EOF'
 // Key Vault with private endpoint for identity resources
 @description('Azure region for all resources')
@@ -447,6 +453,7 @@ EOF
           # Create template file if it doesn't exist
           mkdir -p identity/managed-identity
           if [ ! -f "identity/managed-identity/managed-identities.bicep" ]; then
+            # Proper heredoc - EOF at column 0 with no trailing spaces
             cat > identity/managed-identity/managed-identities.bicep << 'EOF'
 // User-assigned managed identities for workloads
 @description('Azure region for all resources')
@@ -530,6 +537,7 @@ EOF
           # Create AADDS template if it doesn't exist
           mkdir -p identity/aadds
           if [ ! -f "identity/aadds/aadds.bicep" ]; then
+            # Proper heredoc formatting with EOF at column 0
             cat > identity/aadds/aadds.bicep << 'EOF'
 // Azure AD Domain Services for cloud-only environment
 @description('Azure region for all resources')
@@ -743,7 +751,7 @@ EOF
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time (UTC):** 2025-06-08 17:25:27
+          **Date/Time (UTC):** 2025-06-08 17:30:06
           
           ## 📊 Deployed Resources
           
@@ -754,25 +762,36 @@ EOF
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📋 Heredoc Troubleshooting Guide
+          ## 📑 YAML & HEREDOC TROUBLESHOOTING
           
+          ### Common YAML syntax errors and how to fix them:
+
+          #### 1️⃣ Heredoc syntax
           ```bash
-          # ✅ CORRECT - EOF delimiter at start of line
+          # ✅ CORRECT: EOF at column 0, no trailing spaces
           cat > file.txt << 'EOF'
-          content
+          content here
           EOF
-          
-          # ❌ WRONG - Indented EOF delimiter
+
+          # ❌ WRONG: Indented EOF or trailing spaces
           cat > file.txt << 'EOF'
-          content
-            EOF  # Indented - will cause error!
+            content here
+            EOF  # Indented/spaced - causes error!
+          ```
+
+          #### 2️⃣ YAML indentation
+          ```yaml
+          # ✅ CORRECT: Consistent indentation (2 spaces)
+          steps:
+            - name: Step name
+              run: echo "Command"
           
-          # ❌ WRONG - Missing EOF delimiter
-          cat > file.txt << 'EOF'
-          content
-          # No EOF delimiter - will cause error!
+          # ❌ WRONG: Inconsistent indentation
+          steps:
+          - name: Step name
+             run: echo "Command"
           ```
           
           Deployment by: GEP-V  
-          Report generated: 2025-06-08 17:25:27 UTC
+          Report generated: 2025-06-08 17:30:06 UTC
           EOF
