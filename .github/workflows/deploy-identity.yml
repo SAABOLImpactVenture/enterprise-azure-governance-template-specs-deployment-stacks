@@ -667,9 +667,10 @@ jobs:
     name: Deploy Azure AD Domain Services
     needs: [deploy-identity-infrastructure, deploy-key-vault]
     runs-on: ubuntu-latest
-    if: env.DEPLOY_AADDS == 'true'
+    # Replace line 670 with:
+  if: ${{ env.DEPLOY_AADDS == 'true' }}
     
-    steps:
+  steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
