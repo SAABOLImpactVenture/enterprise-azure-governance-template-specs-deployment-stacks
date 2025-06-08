@@ -1,6 +1,25 @@
 # =========================================================
 # Enterprise Azure Landing Zone - Connectivity Deployment
 # =========================================================
+# PROMPT ENGINEERING GUIDANCE:
+# This workflow implements connectivity resources for an enterprise landing zone with:
+# - Hub virtual network in a centralized subscription
+# - Properly named subnets for Azure services (AzureBastionSubnet, AzureFirewallSubnet)
+# - Private DNS zones for private endpoints
+# - Bastion host for secure jumpbox access
+#
+# COMMON ISSUES AND SOLUTIONS:
+# 1. Subnet naming: Azure services require specific subnet names (AzureBastionSubnet, GatewaySubnet)
+# 2. Parameter file issues: Always validate parameter files for correct JSON structure
+# 3. Missing resources: When no resources appear, check resource group directly, not subscription view
+# 4. OIDC authentication: Ensure federation setup is correct in Azure AD and GitHub
+#
+# ENTERPRISE DEPLOYMENT PATTERNS:
+# - Connectivity-Identity-Management separation (CAF/Enterprise Scale model)
+# - Hub-spoke network topology with centralized security services
+# - DNS private zones for private link integration
+# - Advanced security with Azure Firewall and NSGs
+
 name: Deploy Connectivity Resources
 
 on:
@@ -35,6 +54,17 @@ env:
 
 jobs:
   deploy-hub-network:
+    # PROMPT ENGINEERING GUIDANCE:
+    # This job creates the foundation of your enterprise network
+    # The hub network connects all spokes and centrally manages:
+    # - Security via Azure Firewall/NVA
+    # - External connectivity via VPN/ExpressRoute
+    # - Shared services like DNS and Bastion
+    # 
+    # TROUBLESHOOTING STEPS:
+    # - Parameter errors: Check if hubNetworkName, addressPrefix match template
+    # - Resource name conflicts: Verify resources don't already exist
+    # - Subnet configuration: Azure services need specific subnet names/sizes
     name: Deploy Hub Network
     runs-on: ubuntu-latest
     
@@ -42,6 +72,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # PROMPT ENGINEERING GUIDANCE:
+      # OIDC authentication is recommended over service principal secrets
+      # This method improves security by using short-lived tokens
+      # Federation must be properly configured in Azure AD app registration
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -49,11 +83,20 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
 
-      # Fix the VNet peering bicep file
+      # PROMPT ENGINEERING GUIDANCE:
+      # Virtual network peering enables communication across virtual networks
+      # Hub-spoke peering should allow gateway transit from hub to spoke
+      # Spoke-to-hub peering should use remote gateways if VPN/ER is in hub
+      # Common error: Module references failing due to registry changes
       - name: Fix VNet peering bicep file
         run: |
           cat > ./connectivity/peering/vnet-peering.bicep << 'EOF'
-          // Virtual Network Peering Module
+          // Virtual Network Peering Module - Key building block for hub-spoke architecture
+          // PROMPT ENGINEERING GUIDANCE:
+          // - Use explicit parameter names with descriptions for better documentation
+          // - Set appropriate defaults for enterprise networking (security first)
+          // - Include output for programmatic referencing from other workflows
+          
           @description('Name of the source virtual network')
           param sourceVnetName string
 
@@ -95,7 +138,10 @@ jobs:
           
           echo "Fixed vnet-peering.bicep file created."
 
-      # Create resource group
+      # PROMPT ENGINEERING GUIDANCE:
+      # Resource group naming should follow enterprise conventions
+      # Always tag resources for governance, billing and automation
+      # Consistent location usage simplifies disaster recovery planning
       - name: Create resource group
         run: |
           echo "Creating resource group ${{ env.RESOURCE_GROUP_NAME }} in ${{ env.LOCATION }}..."
@@ -104,7 +150,13 @@ jobs:
             --location ${{ env.LOCATION }} \
             --tags environment=${{ env.ENVIRONMENT }} deployedBy=GitHub
       
-      # Debug: Display existing parameter file content
+      # PROMPT ENGINEERING GUIDANCE:
+      # Debugging parameter files is critical for deployment success
+      # Common issues include:
+      # - Invalid JSON format
+      # - Mismatched parameter names
+      # - Missing required parameters
+      # - Template syntax in parameter values
       - name: Debug parameter file
         run: |
           PARAM_FILE="connectivity/hub-network/parameters/hub-network.parameters.json"
@@ -117,7 +169,11 @@ jobs:
             echo "Parameter file $PARAM_FILE not found!"
           fi
 
-      # Create a new valid parameter file
+      # PROMPT ENGINEERING GUIDANCE:
+      # Parameter files should follow ARM template parameter schema
+      # Include only parameters needed by the template
+      # Use environment-specific values for different environments
+      # Location parameter should match resource group location
       - name: Create new parameter file
         run: |
           echo "Creating a new parameter file..."
@@ -146,7 +202,13 @@ jobs:
           echo "Created new parameter file:"
           cat ./hub-network.parameters.json
       
-      # Fix the Bastion subnet issue
+      # PROMPT ENGINEERING GUIDANCE:
+      # Subnet names for PaaS services must follow Azure conventions:
+      # - "AzureBastionSubnet" for Azure Bastion (not "BastionSubnet")
+      # - "GatewaySubnet" for VPN/ExpressRoute gateways
+      # - "AzureFirewallSubnet" for Azure Firewall
+      # - "RouteServerSubnet" for Azure Route Server
+      # Incorrect subnet names will cause deployment failures
       - name: Fix hub-network.bicep file
         run: |
           echo "Fixing BastionSubnet to AzureBastionSubnet in hub-network.bicep..."
@@ -161,7 +223,12 @@ jobs:
           echo "Changes made to hub-network.bicep:"
           diff ./connectivity/hub-network/hub-network.bicep.backup ./connectivity/hub-network/hub-network.bicep || true
       
-      # Deploy with the new parameter file
+      # PROMPT ENGINEERING GUIDANCE:
+      # ARM deployments should:
+      # - Use unique deployment names for tracking and troubleshooting
+      # - Include complete error handling
+      # - Verify deployment success
+      # - Use incremental mode (default) to preserve existing resources
       - name: Deploy hub network
         run: |
           echo "Deploying hub network with new parameter file..."
@@ -175,12 +242,20 @@ jobs:
           echo "Hub network deployment completed"
 
   verify-resources:
+    # PROMPT ENGINEERING GUIDANCE:
+    # Always verify deployed resources to confirm success
+    # Check for specific resource types based on template
+    # Validate resource configuration (subnets, settings)
+    # Generate reports for documentation and governance
     name: Verify Deployed Resources
     needs: deploy-hub-network
     runs-on: ubuntu-latest
     if: always()
     
     steps:
+      # PROMPT ENGINEERING GUIDANCE:
+      # Re-authenticate in each job to prevent token expiration
+      # Each job runs in a separate VM instance and needs auth
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -188,6 +263,13 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
       
+      # PROMPT ENGINEERING GUIDANCE:
+      # Resource verification should check:
+      # - Resource existence
+      # - Correct configuration
+      # - Correct relationships between resources
+      # - Success of dependent services
+      # Look for specific Azure errors in deployment logs
       - name: List and verify deployed resources
         run: |
           echo "Verifying deployed resources in ${{ env.RESOURCE_GROUP_NAME }}..."
@@ -252,5 +334,30 @@ jobs:
             done <<< "$RESOURCES"
           fi
           
-          # Add final success message
-          echo "✅ Hub network resources deployed successfully. Look for resources in the Azure portal under the resource group '${{ env.RESOURCE_GROUP_NAME }}'." >> $GITHUB_STEP_SUMMARY
+          # PROMPT ENGINEERING GUIDANCE:
+          # Always include clear next steps and viewing instructions
+          # Reference specific portal paths rather than general guidance
+          # Include information about what to expect in the portal
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          
+          ## How to View Resources
+          
+          1. In the Azure portal, navigate to **Resource groups**
+          2. Select the resource group **${{ env.RESOURCE_GROUP_NAME }}**
+          3. Resources should appear in the content pane
+          
+          ## Next Steps
+          
+          After hub network deployment:
+          1. Run the configure-enterprise-network.yml workflow to deploy spoke networks
+          2. Configure firewall rules for appropriate traffic filtering
+          3. Set up Azure Monitor for network monitoring
+          4. Implement private endpoints for PaaS services
+          
+          ## Common Issues
+          
+          If resources aren't visible:
+          - Ensure you're looking in the resource group (not subscription view)
+          - Check deployment history in the resource group for errors
+          - Verify permissions to the connectivity subscription
+          EOF
