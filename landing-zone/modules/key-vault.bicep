@@ -5,10 +5,10 @@ param location string = resourceGroup().location
 @description('Environment name')
 param environment string = 'production'
 
-@description('Key Vault name')
+@description('Key Vault name - MUST be 3-24 chars, start with letter, contain only alphanumeric chars and hyphens')
 @minLength(3)
 @maxLength(24)
-param keyVaultName string = 'kv${uniqueString(resourceGroup().id, environment)}' // Simplified name
+param keyVaultName string
 
 @description('Azure AD tenant ID')
 param tenantId string
@@ -20,7 +20,7 @@ param vnetId string
 param privateEndpointSubnetName string = 'snet-private-endpoints'
 
 @description('SKU name for Key Vault')
-param skuName string = 'premium'
+param skuName string = 'standard'
 
 @description('Tags to apply to all resources')
 param tags object = {
