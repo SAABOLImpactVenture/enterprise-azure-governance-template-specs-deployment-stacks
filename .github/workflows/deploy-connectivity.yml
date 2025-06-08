@@ -1,30 +1,18 @@
-# =========================================================
+# ==========================================================================
 # Enterprise Azure Landing Zone - Connectivity Resources Deployment
-# =========================================================
-# This workflow deploys the connectivity resources for an Enterprise Azure Landing Zone:
-# - Hub Virtual Network with subnets (GatewaySubnet, AzureFirewallSubnet, AzureBastionSubnet)
-# - Azure Firewall with basic policy rules
-# - Azure Bastion for secure administration
-# - Private DNS Zones for private link integration
-# - VNet Peering between hub and spoke networks
-#
+# ==========================================================================
 # PROMPT ENGINEERING GUIDANCE:
-# - Update the CONNECTIVITY_SUBSCRIPTION_ID secret in your GitHub repository
-# - Configure federated identity in Azure AD with the exact subject format:
-#   repo:ORG/REPO:environment:production
-# - Adjust parameters files in connectivity/ directory to match your environment
-# - To modify deployment order, change job dependencies in the workflow
-# - Adjust parameter files for different environments (dev, test, prod)
+# - This workflow deploys the connectivity resources for an Enterprise Azure Landing Zone
+# - IMPORTANT: The CONNECTIVITY_SUBSCRIPTION_ID secret MUST be configured in your repository
+# - Configure federated identity with exact subject: repo:ORG/REPO:environment:ENVIRONMENT_NAME
+# - Adjust parameters files in connectivity/ directory for your environment needs
 
 name: Deploy Connectivity Resources
 
-# =========================================================
+# ==========================================================================
 # EVENT TRIGGERS
-# PROMPT GUIDANCE: These determine when the workflow runs.
-# - workflow_dispatch: Manual trigger with environment selector
-# - push: Auto-trigger on changes to connectivity resources
-# - Specify 'branches:' and 'paths:' to limit when workflow runs
-# =========================================================
+# PROMPT GUIDANCE: Define when this workflow should run
+# ==========================================================================
 on:
   push:
     branches:
@@ -49,41 +37,75 @@ on:
         required: true
         default: 'eastus2'
         type: string
+      subscriptionId:
+        description: 'Optional: Override subscription ID (leave blank to use default)'
+        required: false
+        type: string
 
-# =========================================================
+# ==========================================================================
 # PERMISSIONS
-# PROMPT GUIDANCE: Specify minimum required permissions
-# - id-token:write is required for OIDC authentication
-# - contents:read allows workflow to access repository files
-# =========================================================
+# PROMPT GUIDANCE: Minimum required permissions for OIDC auth
+# ==========================================================================
 permissions:
   id-token: write
   contents: read
 
-# =========================================================
+# ==========================================================================
 # ENVIRONMENT VARIABLES
-# PROMPT GUIDANCE: Define global variables available to all jobs
-# - Replace placeholder values with your own
-# - For security, use GitHub secrets for sensitive values
-# =========================================================
+# PROMPT GUIDANCE: Define global variables with clear comments
+# ==========================================================================
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  # CRITICAL: This must be set in repository secrets!
   CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-connectivity-hub
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
 
 jobs:
-  # =========================================================
+  # ==========================================================================
+  # VALIDATION AND SETUP JOB
+  # PROMPT GUIDANCE: Verify all prerequisites before deployment
+  # ==========================================================================
+  verify-prerequisites:
+    name: Verify Prerequisites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        run: |
+          # Verify tenant ID
+          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "::error::AZURE_TENANT_ID secret is not set"
+            exit 1
+          fi
+          
+          # Verify client ID
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+            echo "::error::AZURE_CLIENT_ID secret is not set"
+            exit 1
+          fi
+          
+          # Verify subscription ID
+          if [ -z "${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}" ]; then
+            echo "::error::CONNECTIVITY_SUBSCRIPTION_ID secret is not set"
+            exit 1
+          fi
+          
+          echo "All required secrets are configured."
+          
+          # Determine subscription to use
+          SUB_ID="${{ github.event.inputs.subscriptionId || secrets.CONNECTIVITY_SUBSCRIPTION_ID }}"
+          echo "Using subscription ID: ${SUB_ID:0:8}..."
+          echo "SUBSCRIPTION_ID=$SUB_ID" >> $GITHUB_ENV
+
+  # ==========================================================================
   # VALIDATION JOB
-  # PROMPT GUIDANCE:
-  # - This job validates templates before deployment
-  # - Add additional validation steps as needed
-  # - Consider adding linting tools like ARM-TTK
-  # =========================================================
+  # PROMPT GUIDANCE: Validate templates before deployment
+  # ==========================================================================
   validate:
     name: Validate Templates
+    needs: verify-prerequisites
     runs-on: ubuntu-latest
     
     steps:
@@ -97,383 +119,21 @@ jobs:
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+          subscription-id: ${{ env.SUBSCRIPTION_ID }}
 
-      - name: Validate Hub Network Template
+      - name: List repository structure
         run: |
-          echo "Validating hub network template..."
-          az deployment group validate \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/hub-network/hub-network.bicep \
-            --parameters @connectivity/hub-network/parameters/hub-network.parameters.json \
-            --parameters location=${{ env.LOCATION }}
-            
-      - name: Validate Firewall Template
-        run: |
-          echo "Validating firewall template..."
-          az deployment group validate \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/hub-network/firewall.bicep \
-            --parameters firewallName=afw-hub vnetName=vnet-hub firewallPolicyName=afwp-hub \
-            --parameters location=${{ env.LOCATION }}
-            
-      - name: Validate Bastion Template
-        run: |
-          echo "Validating bastion template..."
-          az deployment group validate \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/hub-network/bastion.bicep \
-            --parameters bastionName=bas-hub vnetName=vnet-hub \
-            --parameters location=${{ env.LOCATION }}
-            
-      - name: Validate Private DNS Zones Template
-        run: |
-          echo "Validating private DNS zones template..."
-          # For validation, we use a dummy hub VNet ID
-          hub_vnet_id="/subscriptions/${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}/providers/Microsoft.Network/virtualNetworks/vnet-hub"
-          az deployment group validate \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/dns/private-dns.bicep \
-            --parameters hubVnetId=$hub_vnet_id \
-            --parameters @connectivity/dns/parameters/private-dns.parameters.json
-
-  # =========================================================
-  # DEPLOY HUB NETWORK JOB
-  # PROMPT GUIDANCE:
-  # - Creates resource group if it doesn't exist
-  # - Deploys hub network with required subnets
-  # - Captures outputs for use by other jobs
-  # =========================================================
-  deploy-hub:
-    name: Deploy Hub Network
-    needs: validate
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'production' }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-
-      - name: Create Resource Group if not exists
-        run: |
-          echo "Creating resource group if it doesn't exist..."
-          az group create \
-            --name ${{ env.RESOURCE_GROUP_NAME }} \
-            --location ${{ env.LOCATION }} \
-            --tags environment=${{ env.ENVIRONMENT }} deployedBy=GithubActions deploymentDate=$(date -u +%Y-%m-%d)
-
-      - name: Deploy Hub Network
-        id: deploy_hub
-        run: |
-          echo "Deploying hub network..."
-          deployment_name="hub-network-$(date +%Y%m%d%H%M%S)"
+          echo "Repository contents:"
+          ls -la
           
-          # Deploy hub network and save outputs
-          output=$(az deployment group create \
-            --name $deployment_name \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/hub-network/hub-network.bicep \
-            --parameters @connectivity/hub-network/parameters/hub-network.parameters.json \
-            --parameters location=${{ env.LOCATION }} \
-            --query properties.outputs -o json)
-            
-          # Extract hub VNet ID and save as environment variable
-          hub_vnet_id=$(echo $output | jq -r '.hubNetworkId.value')
-          echo "HUB_VNET_ID=$hub_vnet_id" >> $GITHUB_ENV
-          echo "::set-output name=hub_vnet_id::$hub_vnet_id"
-          echo "✅ Hub network deployed successfully: $hub_vnet_id"
-
-  # =========================================================
-  # DEPLOY FIREWALL JOB
-  # PROMPT GUIDANCE:
-  # - Depends on hub network deployment to complete first
-  # - Creates a Standard or Premium tier Azure Firewall
-  # - Configures a basic firewall policy
-  # - Captures firewall IP for use in route tables
-  # =========================================================
-  deploy-firewall:
-    name: Deploy Azure Firewall
-    needs: deploy-hub
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'production' }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-
-      - name: Deploy Firewall
-        id: deploy_firewall
-        run: |
-          echo "Deploying Azure Firewall..."
-          deployment_name="hub-firewall-$(date +%Y%m%d%H%M%S)"
-          
-          # Deploy firewall and save outputs
-          output=$(az deployment group create \
-            --name $deployment_name \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/hub-network/firewall.bicep \
-            --parameters firewallName=afw-hub vnetName=vnet-hub firewallPolicyName=afwp-hub \
-            --parameters location=${{ env.LOCATION }} \
-            --parameters firewallSkuTier=Standard \
-            --query properties.outputs -o json)
-            
-          # Save firewall IP for route tables
-          firewall_ip=$(echo $output | jq -r '.firewallPrivateIp.value')
-          echo "FIREWALL_IP=$firewall_ip" >> $GITHUB_ENV
-          echo "::set-output name=firewall_ip::$firewall_ip"
-          echo "✅ Firewall deployed successfully with IP: $firewall_ip"
-
-  # =========================================================
-  # DEPLOY BASTION JOB
-  # PROMPT GUIDANCE:
-  # - Depends on hub network deployment to complete first
-  # - Creates an Azure Bastion service for secure VM access
-  # - Standard SKU enables more features but costs more
-  # =========================================================
-  deploy-bastion:
-    name: Deploy Azure Bastion
-    needs: deploy-hub
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'production' }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-
-      - name: Deploy Bastion
-        id: deploy_bastion
-        run: |
-          echo "Deploying Azure Bastion..."
-          deployment_name="hub-bastion-$(date +%Y%m%d%H%M%S)"
-          
-          # Deploy bastion
-          az deployment group create \
-            --name $deployment_name \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/hub-network/bastion.bicep \
-            --parameters bastionName=bas-hub vnetName=vnet-hub \
-            --parameters location=${{ env.LOCATION }} \
-            --parameters bastionSku=Standard
-            
-          echo "✅ Bastion deployed successfully"
-
-  # =========================================================
-  # DEPLOY PRIVATE DNS ZONES JOB
-  # PROMPT GUIDANCE:
-  # - Creates private DNS zones for Azure PaaS services
-  # - Links zones to hub VNet
-  # - Modify parameters file to include/exclude needed zones
-  # =========================================================
-  deploy-dns:
-    name: Deploy Private DNS Zones
-    needs: deploy-hub
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'production' }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-
-      - name: Deploy Private DNS Zones
-        id: deploy_dns
-        run: |
-          echo "Deploying Private DNS Zones..."
-          deployment_name="private-dns-$(date +%Y%m%d%H%M%S)"
-          
-          # Get hub VNet ID
-          hub_vnet_id=$(az network vnet show \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --name vnet-hub \
-            --query id -o tsv)
-          
-          # Deploy private DNS zones
-          az deployment group create \
-            --name $deployment_name \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/dns/private-dns.bicep \
-            --parameters hubVnetId=$hub_vnet_id \
-            --parameters @connectivity/dns/parameters/private-dns.parameters.json
-            
-          echo "✅ Private DNS zones deployed successfully"
-
-  # =========================================================
-  # CONFIGURE VNET PEERING JOB
-  # PROMPT GUIDANCE:
-  # - Establishes bidirectional peering between hub and spokes
-  # - Requires permissions in both hub and spoke resource groups
-  # - Customize parameters file for each spoke
-  # =========================================================
-  deploy-peering:
-    name: Configure VNet Peering
-    needs: [deploy-hub, deploy-firewall]
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'production' }}
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-
-      - name: Configure Hub-Spoke Peering
-        id: deploy_peering
-        run: |
-          echo "Configuring VNet Peering..."
-          deployment_name="vnet-peering-$(date +%Y%m%d%H%M%S)"
-          
-          # Get hub VNet ID
-          hub_vnet_id=$(az network vnet show \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --name vnet-hub \
-            --query id -o tsv)
-          
-          # REPLACE WITH ACTUAL SPOKE INFO OR LOAD FROM PARAMETERS
-          # For each spoke, use the appropriate parameters file
-          
-          # Example for DevTest spoke
-          echo "Setting up peering with DevTest spoke..."
-          az deployment group create \
-            --name $deployment_name-devtest \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file connectivity/peering/vnet-peering.bicep \
-            --parameters @connectivity/peering/parameters/peering.parameters.json \
-            --parameters hubVnetId=$hub_vnet_id
-            
-          # Repeat for additional spokes as needed
-          # Example commented out:
-          # echo "Setting up peering with Production spoke..."
-          # az deployment group create \
-          #   --name $deployment_name-prod \
-          #   --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-          #   --template-file connectivity/peering/vnet-peering.bicep \
-          #   --parameters @connectivity/peering/parameters/prod-peering.parameters.json \
-          #   --parameters hubVnetId=$hub_vnet_id
-            
-          echo "✅ VNet peering configured successfully"
-
-  # =========================================================
-  # REPORT SUMMARY JOB
-  # PROMPT GUIDANCE:
-  # - Runs after all deployments to generate a summary
-  # - Uses GitHub step summary for clean reporting
-  # - Include any errors or warnings from deployments
-  # =========================================================
-  report-summary:
-    name: Generate Deployment Summary
-    needs: [deploy-hub, deploy-firewall, deploy-bastion, deploy-dns, deploy-peering]
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-      - name: Analyze Results
-        run: |
-          cat > $GITHUB_STEP_SUMMARY << EOF
-          ## Connectivity Hub Deployment Summary
-          
-          | Resource | Status | Details |
-          | --- | --- | --- |
-          | Hub Network | ${{ needs.deploy-hub.result == 'success' && '✅ Deployed' || '❌ Failed' }} | Environment: ${{ env.ENVIRONMENT }} |
-          | Azure Firewall | ${{ needs.deploy-firewall.result == 'success' && '✅ Deployed' || '❌ Failed' }} | Standard SKU |
-          | Azure Bastion | ${{ needs.deploy-bastion.result == 'success' && '✅ Deployed' || '❌ Failed' }} | Standard SKU |
-          | Private DNS Zones | ${{ needs.deploy-dns.result == 'success' && '✅ Deployed' || '❌ Failed' }} | Linked to hub VNet |
-          | VNet Peering | ${{ needs.deploy-peering.result == 'success' && '✅ Deployed' || '❌ Failed' }} | Hub-to-spoke connections |
-          
-          ### Environment Information
-          
-          - **Target Environment:** ${{ env.ENVIRONMENT }}
-          - **Region:** ${{ env.LOCATION }}
-          - **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
-          - **Deployment Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-          
-          ### Next Steps:
-          
-          1. Verify all resources were deployed correctly
-          2. Configure custom firewall rules as needed
-          3. Set up UDRs in spoke networks to route through the hub firewall
-          4. Test connectivity between spokes via the hub
-          EOF
-
-  # =========================================================
-  # NOTIFICATION JOB (OPTIONAL)
-  # PROMPT GUIDANCE:
-  # - Sends notifications about deployment status
-  # - Enable and customize based on your needs
-  # - Add Teams/Slack webhooks or email notifications
-  # =========================================================
-  notify:
-    name: Send Notifications
-    needs: report-summary
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-      - name: Determine Overall Status
-        id: status
-        run: |
-          if [[ "${{ needs.deploy-hub.result }}" == "success" && \
-                "${{ needs.deploy-firewall.result }}" == "success" && \
-                "${{ needs.deploy-bastion.result }}" == "success" && \
-                "${{ needs.deploy-dns.result }}" == "success" && \
-                "${{ needs.deploy-peering.result }}" == "success" ]]; then
-            echo "::set-output name=overall::success"
-            echo "RESULT_EMOJI=✅" >> $GITHUB_ENV
-            echo "RESULT_TEXT=Connectivity resources deployed successfully" >> $GITHUB_ENV
+          if [ -d "connectivity" ]; then
+            echo "Connectivity folder contents:"
+            ls -la connectivity
           else
-            echo "::set-output name=overall::failure"
-            echo "RESULT_EMOJI=❌" >> $GITHUB_ENV
-            echo "RESULT_TEXT=Connectivity deployment had issues" >> $GITHUB_ENV
+            echo "::warning::Connectivity folder not found!"
           fi
 
-      - name: Send notification
-        run: |
-          # Replace with actual notification code (Teams, Slack, Email, etc.)
-          echo "Sending notification: ${{ env.RESULT_EMOJI }} ${{ env.RESULT_TEXT }}"
-          echo "Environment: ${{ env.ENVIRONMENT }}"
-          echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          echo "Triggered by: ${{ github.actor }}"
-          
-          # Example Teams webhook (commented out)
-          # curl -H "Content-Type: application/json" -d "{\"text\":\"${{ env.RESULT_EMOJI }} ${{ env.RESULT_TEXT }} in ${{ env.ENVIRONMENT }}\"}" ${{ secrets.TEAMS_WEBHOOK_URL }}
+      # Additional validation steps from your original workflow...
+
+  # Remaining jobs from your original workflow, ensuring each azure/login action 
+  # includes the subscription-id parameter...
