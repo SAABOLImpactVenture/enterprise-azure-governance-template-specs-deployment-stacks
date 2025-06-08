@@ -9,14 +9,20 @@
 # - User-assigned managed identities for workload authentication
 # - Private DNS integration with connectivity subscription
 #
-# CRITICAL SYNTAX FIXES:
-# 1. For environment variable conditionals, ALWAYS use ${{ env.VAR }} syntax
-#    - CORRECT ✓: if: ${{ env.DEPLOY_AADDS == 'true' }}
-#    - WRONG ✗: if: env.DEPLOY_AADDS == 'true'
-#    - WRONG ✗: if: $[ env.DEPLOY_AADDS == 'true' }]
-# 2. Check shell script conditionals too: [ "${{ env.VAR }}" == "value" ]
-# 3. Scan entire file for any expressions using env variables
-# 4. Use consistent quotes: 'single quotes' for string literals in conditionals
+# CRITICAL SYNTAX FIXES - GITHUB ACTIONS CONDITIONALS:
+# 1. For job-level conditionals, use the simplified syntax without expression braces:
+#    - CORRECT ✓: if: env.DEPLOY_AADDS == 'true'
+#    - WRONG ✗: if: ${{ env.DEPLOY_AADDS == 'true' }}
+#
+# 2. For step-level conditionals and expressions, use the full expression syntax:
+#    - CORRECT ✓: if: ${{ steps.my_step.outputs.result == 'success' }}
+#    - CORRECT ✓: run: echo "${{ env.MY_VARIABLE }}"
+#
+# 3. For script conditionals, use the full expression syntax for variable references:
+#    - CORRECT ✓: if [ "${{ env.DEPLOY_AADDS }}" == "true" ]; then
+#    - WRONG ✗: if [ "env.DEPLOY_AADDS" == "true" ]; then
+#
+# 4. Always use consistent quotes: single quotes for YAML strings, double quotes for shell
 
 name: Deploy Identity Resources
 
@@ -335,72 +341,9 @@ jobs:
           echo "VNET_ID=$VNET_ID" >> $GITHUB_OUTPUT
           echo "Identity network deployed successfully."
 
-      - name: Deploy Log Analytics workspace
-        run: |
-          echo "Deploying Log Analytics workspace..."
-          
-          # Check if Log Analytics template exists
-          if [ ! -f "identity/monitoring/log-analytics.bicep" ]; then
-            echo "::warning::log-analytics.bicep not found. Creating minimal template."
-            
-            # Create a minimal Log Analytics Bicep file if it doesn't exist
-            mkdir -p identity/monitoring
-            cat > identity/monitoring/log-analytics.bicep << 'EOF'
-            // Log Analytics for identity monitoring
-            @description('Azure region for all resources')
-            param location string = resourceGroup().location
-
-            @description('Environment name')
-            param environment string = 'production'
-
-            @description('Log Analytics workspace name')
-            param workspaceName string = 'law-identity'
-
-            @description('Log retention in days')
-            param retentionInDays int = 30
-
-            @description('Tags to apply to all resources')
-            param tags object = {
-              environment: environment
-              workload: 'identity'
-              deployment: 'bicep'
-            }
-
-            // Create Log Analytics workspace
-            resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-              name: workspaceName
-              location: location
-              tags: tags
-              properties: {
-                sku: {
-                  name: 'PerGB2018'
-                }
-                retentionInDays: retentionInDays
-                features: {
-                  enableLogAccessUsingOnlyResourcePermissions: true
-                }
-              }
-            }
-
-            // Output the workspace ID and primary key for use in diagnostics
-            output workspaceId string = logAnalytics.id
-            output workspaceName string = logAnalytics.name
-            EOF
-          fi
-          
-          # Deploy Log Analytics workspace
-          az deployment group create \
-            --name "log-analytics-$(date +%Y%m%d%H%M%S)" \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --template-file identity/monitoring/log-analytics.bicep \
-            --parameters environment=${{ env.ENVIRONMENT }} location=${{ env.LOCATION }}
-          
-          echo "Log Analytics workspace deployed successfully."
-      
-      # Set up VNet peering if connectivity subscription is available
-      # SYNTAX FIX: Proper environment variable reference in conditional
+      # Simplified job-level conditional syntax (no ${{ }})
       - name: Set up VNet peering to hub
-        if: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID != '' }}
+        if: env.CONNECTIVITY_SUBSCRIPTION_ID != ''
         run: |
           echo "Setting up VNet peering to hub network..."
           
@@ -654,14 +597,14 @@ jobs:
   # - Only deployed if specifically requested (costly service)
   # - Requires careful network configuration and security groups
   # - SKU selection based on directory size and performance needs
-  # - CRITICAL FIX: Always use ${{ }} syntax for environment variables in conditionals
+  # - SYNTAX FIX: For job-level conditionals, use simplified syntax without ${{ }}
   # ==========================================================================
   deploy-aadds:
     name: Deploy Azure AD Domain Services
     needs: [deploy-identity-infrastructure, deploy-key-vault]
     runs-on: ubuntu-latest
-    # CRITICAL FIX: Changed from incorrect $[ env.DEPLOY_AADDS == 'true' }] to correct syntax
-    if: ${{ env.DEPLOY_AADDS == 'true' }}
+    # FIXED: Using simplified syntax for job-level conditional - no curly braces
+    if: env.DEPLOY_AADDS == 'true'
     
     steps:
       - name: Checkout repository
@@ -1022,8 +965,7 @@ jobs:
             echo "❌ Managed identities not found"
           fi
           
-          # SYNTAX FIX: Proper environment variable reference in conditional
-          # Check for AADDS if deployed
+          # Shell syntax requires ${{ }} for env variables
           if [ "${{ env.DEPLOY_AADDS }}" == "true" ]; then
             if az resource list \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -1073,11 +1015,14 @@ jobs:
              - Assign appropriate RBAC roles to managed identities
              - Update applications to use managed identities
           
-          ## Common Troubleshooting Tips
+          ## GitHub Actions Conditionals Reference
           
-          - Environment variable problems in conditionals? Use proper syntax: ${{ '\${{ env.VAR_NAME }}' }}
-          - Network connectivity issues? Check NSG rules and VNet peering settings
-          - Permission failures? Verify service principal has appropriate roles
-          - Resource not found? Check for typos in resource names and deployment errors
-          - AADDS taking long? This is normal, provisioning can take 1-2 hours
+          | Context | Correct Syntax | Notes |
+          |---------|---------------|-------|
+          | Job-level if | \`if: env.VAR == 'value'\` | No curly braces needed |
+          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | Curly braces required |
+          | Shell scripts | \`if [ "\${{ env.VAR }}" == "value" ]\` | Curly braces required for variable |
+          | Expression syntax | \`echo "\${{ env.VAR }}"\` | Curly braces required for variable |
+          
+          This deployment completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
