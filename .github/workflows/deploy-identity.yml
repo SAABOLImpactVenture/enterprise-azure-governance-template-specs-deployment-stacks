@@ -9,23 +9,23 @@
 # - User-assigned managed identities for workload authentication
 # - Private DNS integration with connectivity subscription
 #
-# GITHUB ACTIONS CONDITIONALS GUIDE:
-# 1. JOB-LEVEL CONDITIONALS (Different syntax rules):
-#    - CORRECT ✓: if: env.VAR == 'value'
-#    - WRONG ✗: if: ${{ env.VAR == 'value' }}
+# CRITICAL SYNTAX DIFFERENCES IN GITHUB ACTIONS CONDITIONALS:
+# --------------------------------------------------------
+# 1. JOB-LEVEL CONDITIONALS ✓✗
+#    ✓ CORRECT: if: env.DEPLOY_AADDS == 'true'
+#    ✗ WRONG:   if: ${{ env.DEPLOY_AADDS == 'true' }}
 #
-# 2. STEP-LEVEL CONDITIONALS:
-#    - CORRECT ✓: if: ${{ steps.my_step.outputs.result == 'success' }}
-#    - CORRECT ✓: if: ${{ env.MY_VAR == 'true' }}
+# 2. STEP-LEVEL CONDITIONALS ✓✗
+#    ✓ CORRECT: if: ${{ steps.my_step.outputs.result == 'success' }}
+#    ✗ WRONG:   if: steps.my_step.outputs.result == 'success'
 #
-# 3. SHELL SCRIPT CONDITIONALS:
-#    - CORRECT ✓: if [ "${{ env.MY_VAR }}" == "true" ]; then
-#    - WRONG ✗: if [ "env.MY_VAR" == "true" ]; then
+# 3. SHELL SCRIPT CONDITIONALS ✓✗
+#    ✓ CORRECT: if [ "${{ env.MY_VAR }}" == "true" ]
+#    ✗ WRONG:   if [ "env.MY_VAR" == "true" ]
 #
 # 4. WORKFLOW STRUCTURE:
 #    - At least one job must have NO dependencies (no "needs" parameter)
-#    - All other jobs should establish clear dependency chains
-#    - Use job outputs to pass data between dependent jobs
+# --------------------------------------------------------
 
 name: Provision Identity
 
@@ -75,19 +75,17 @@ env:
 
 jobs:
   # ==========================================================================
-  # VERIFY PREREQUISITES JOB - WORKFLOW ENTRY POINT (NO DEPENDENCIES)
+  # VERIFY PREREQUISITES JOB - WORKFLOW ENTRY POINT
   # ==========================================================================
   # PROMPT GUIDANCE:
-  # - This job has NO "needs" parameter - it will run first as the entry point
+  # - This job has NO "needs" parameter - it serves as the workflow entry point
   # - Every GitHub Actions workflow MUST have at least one job without dependencies
   # - Validation before deployment prevents downstream failures
   # ==========================================================================
   verify-prerequisites:
     name: Verify Prerequisites
-    # NO "needs" parameter - this is the workflow entry point!
+    # NO "needs" parameter here - entry point job!
     runs-on: ubuntu-latest
-    outputs:
-      resource_group: ${{ steps.set_outputs.outputs.resource_group }}
     
     steps:
       - name: Checkout repository
@@ -133,26 +131,19 @@ jobs:
           fi
           
           echo "Azure connectivity verified successfully."
-      
-      - name: Set job outputs
-        id: set_outputs
-        run: |
-          echo "resource_group=${{ env.RESOURCE_GROUP_NAME }}" >> $GITHUB_OUTPUT
 
   # ==========================================================================
   # DEPLOY IDENTITY INFRASTRUCTURE JOB
   # ==========================================================================
   # PROMPT GUIDANCE:
   # - This job depends on verify-prerequisites job completion
-  # - Resource group and basic network infrastructure must be deployed first
-  # - Network security and routing are critical for identity services
+  # - Network infrastructure must be deployed before identity services
+  # - Consistent tagging strategy enables better governance
   # ==========================================================================
   deploy-identity-infrastructure:
     name: Deploy Identity Infrastructure
     needs: verify-prerequisites
     runs-on: ubuntu-latest
-    outputs:
-      vnet_id: ${{ steps.deploy_network.outputs.vnet_id }}
     
     steps:
       - name: Checkout repository
@@ -266,7 +257,6 @@ jobs:
             --name "vnet-identity" \
             --query id -o tsv)
           
-          echo "vnet_id=$VNET_ID" >> $GITHUB_OUTPUT
           echo "Identity network deployed successfully."
 
   # ==========================================================================
@@ -302,25 +292,6 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name "vnet-identity" \
             --query id -o tsv)
-          
-          # Create private DNS zone for Key Vault if it doesn't exist
-          echo "Creating private DNS zone for Key Vault..."
-          if ! az network private-dns zone show \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --name "privatelink.vaultcore.azure.net" &>/dev/null; then
-            
-            az network private-dns zone create \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --name "privatelink.vaultcore.azure.net"
-              
-            # Link private DNS zone to VNet
-            az network private-dns link vnet create \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --zone-name "privatelink.vaultcore.azure.net" \
-              --name "link-to-identity-vnet" \
-              --virtual-network $VNET_ID \
-              --registration-enabled false
-          fi
           
           # Check if Key Vault template exists and create if missing
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
@@ -414,6 +385,25 @@ jobs:
             EOF
           fi
           
+          # Create private DNS zone for Key Vault if it doesn't exist
+          echo "Creating private DNS zone for Key Vault..."
+          if ! az network private-dns zone show \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name "privatelink.vaultcore.azure.net" &>/dev/null; then
+            
+            az network private-dns zone create \
+              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+              --name "privatelink.vaultcore.azure.net"
+              
+            # Link private DNS zone to VNet
+            az network private-dns link vnet create \
+              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+              --zone-name "privatelink.vaultcore.azure.net" \
+              --name "link-to-identity-vnet" \
+              --virtual-network $VNET_ID \
+              --registration-enabled false
+          fi
+          
           # Deploy Key Vault
           echo "Deploying Key Vault..."
           az deployment group create \
@@ -433,11 +423,10 @@ jobs:
   # PROMPT GUIDANCE:
   # - Managed identities for workload authentication
   # - User-assigned identities for better control and lifecycle management
-  # - Add appropriate RBAC assignments based on workload needs
   # ==========================================================================
   deploy-managed-identities:
     name: Deploy Managed Identities
-    needs: deploy-key-vault
+    needs: deploy-identity-infrastructure
     runs-on: ubuntu-latest
     
     steps:
@@ -451,61 +440,60 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.IDENTITY_SUBSCRIPTION_ID }}
       
-      - name: Create managed identities template
-        run: |
-          echo "Creating managed identities template..."
-          
-          mkdir -p identity/managed-identity
-          cat > identity/managed-identity/managed-identities.bicep << 'EOF'
-          // User-assigned managed identities for workloads
-          @description('Azure region for all resources')
-          param location string = resourceGroup().location
-
-          @description('Environment name')
-          param environment string = 'production'
-
-          @description('Tags to apply to all resources')
-          param tags object = {
-            environment: environment
-            workload: 'identity'
-            deployment: 'bicep'
-          }
-
-          // Create user-assigned managed identities
-          resource appManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-            name: 'id-app-services'
-            location: location
-            tags: tags
-          }
-
-          resource dataWorkloadIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-            name: 'id-data-workloads'
-            location: location
-            tags: tags
-          }
-
-          resource automationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-            name: 'id-automation'
-            location: location
-            tags: tags
-          }
-
-          // Outputs for reference in other deployments
-          output appIdentityId string = appManagedIdentity.id
-          output appIdentityPrincipalId string = appManagedIdentity.properties.principalId
-          
-          output dataWorkloadIdentityId string = dataWorkloadIdentity.id
-          output dataWorkloadPrincipalId string = dataWorkloadIdentity.properties.principalId
-          
-          output automationIdentityId string = automationIdentity.id
-          output automationPrincipalId string = automationIdentity.properties.principalId
-          EOF
-          
-          echo "Managed identities template created."
-      
       - name: Deploy managed identities
         run: |
           echo "Deploying managed identities..."
+          
+          # Create a directory for managed identities if it doesn't exist
+          mkdir -p identity/managed-identity
+          
+          # Create template file if it doesn't exist
+          if [ ! -f "identity/managed-identity/managed-identities.bicep" ]; then
+            cat > identity/managed-identity/managed-identities.bicep << 'EOF'
+            // User-assigned managed identities for workloads
+            @description('Azure region for all resources')
+            param location string = resourceGroup().location
+
+            @description('Environment name')
+            param environment string = 'production'
+
+            @description('Tags to apply to all resources')
+            param tags object = {
+              environment: environment
+              workload: 'identity'
+              deployment: 'bicep'
+            }
+
+            // Create user-assigned managed identities
+            resource appManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+              name: 'id-app-services'
+              location: location
+              tags: tags
+            }
+
+            resource dataWorkloadIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+              name: 'id-data-workloads'
+              location: location
+              tags: tags
+            }
+
+            resource automationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+              name: 'id-automation'
+              location: location
+              tags: tags
+            }
+
+            // Outputs for reference in other deployments
+            output appIdentityId string = appManagedIdentity.id
+            output appIdentityPrincipalId string = appManagedIdentity.properties.principalId
+            
+            output dataWorkloadIdentityId string = dataWorkloadIdentity.id
+            output dataWorkloadPrincipalId string = dataWorkloadIdentity.properties.principalId
+            
+            output automationIdentityId string = automationIdentity.id
+            output automationPrincipalId string = automationIdentity.properties.principalId
+            EOF
+          fi
           
           # Deploy managed identities
           az deployment group create \
@@ -522,14 +510,14 @@ jobs:
   # PROMPT GUIDANCE:
   # - Azure AD DS provides managed domain services for a cloud-only environment
   # - Only deployed if specifically requested (costly service)
-  # - Requires careful network configuration and security groups
-  # - CRITICAL FIX: Use simplified syntax for job-level conditionals 
+  # - Conditional jobs use different syntax than conditional steps
+  # - THE ERROR WAS HERE: Line 533 - incorrect use of curly braces in job-level conditional
   # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
     needs: deploy-identity-infrastructure
     runs-on: ubuntu-latest
-    # FIXED: Using simplified syntax for job-level conditional - no curly braces
+    # FIXED: Job-level conditionals use simplified syntax WITHOUT ${{ }} braces
     if: env.DEPLOY_AADDS == 'true'
     
     steps:
@@ -543,142 +531,124 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.IDENTITY_SUBSCRIPTION_ID }}
       
-      - name: Create AADDS template
-        run: |
-          echo "Creating Azure AD Domain Services template..."
-          
-          mkdir -p identity/aadds
-          cat > identity/aadds/aadds.bicep << 'EOF'
-          // Azure AD Domain Services for cloud-only environment
-          @description('Azure region for all resources')
-          param location string = resourceGroup().location
-
-          @description('Environment name')
-          param environment string = 'production'
-
-          @description('Domain name for AADDS')
-          param domainName string = 'aadds.contoso.com'
-
-          @description('SKU for AADDS')
-          @allowed(['Standard', 'Enterprise', 'Premium'])
-          param sku string = 'Standard'
-
-          @description('ID of the identity VNet')
-          param vnetId string
-
-          @description('Name of the subnet for AADDS')
-          param aaddsSubnetName string = 'snet-domain-services'
-
-          @description('Tags to apply to all resources')
-          param tags object = {
-            environment: environment
-            workload: 'identity'
-            deployment: 'bicep'
-          }
-
-          // Extract subscription ID and resource group name from VNet ID
-          var vnetSubscriptionId = split(vnetId, '/')[2]
-          var vnetResourceGroup = split(vnetId, '/')[4]
-          var vnetName = split(vnetId, '/')[8]
-
-          // Reference the subnet for AADDS
-          resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
-            name: '${vnetName}/${aaddsSubnetName}'
-            scope: resourceGroup(vnetSubscriptionId, vnetResourceGroup)
-          }
-
-          // Create a Network Security Group for AADDS
-          resource aaddsNsg 'Microsoft.Network/networkSecurityGroups@2023-04-01' = {
-            name: 'nsg-aadds'
-            location: location
-            tags: tags
-            properties: {
-              securityRules: [
-                {
-                  name: 'AllowLDAPS'
-                  properties: {
-                    priority: 201
-                    direction: 'Inbound'
-                    access: 'Allow'
-                    protocol: 'Tcp'
-                    sourceAddressPrefix: '*'
-                    sourcePortRange: '*'
-                    destinationAddressPrefix: '*'
-                    destinationPortRange: '636'
-                  }
-                }
-                {
-                  name: 'AllowLDAP'
-                  properties: {
-                    priority: 202
-                    direction: 'Inbound'
-                    access: 'Allow'
-                    protocol: 'Tcp'
-                    sourceAddressPrefix: '*'
-                    sourcePortRange: '*'
-                    destinationAddressPrefix: '*'
-                    destinationPortRange: '389'
-                  }
-                }
-                {
-                  name: 'AllowKerberos'
-                  properties: {
-                    priority: 203
-                    direction: 'Inbound'
-                    access: 'Allow'
-                    protocol: 'Tcp'
-                    sourceAddressPrefix: '*'
-                    sourcePortRange: '*'
-                    destinationAddressPrefix: '*'
-                    destinationPortRange: '88'
-                  }
-                }
-              ]
-            }
-          }
-
-          // Associate NSG with the subnet
-          resource subnetWithNsg 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' = {
-            name: '${vnetName}/${aaddsSubnetName}'
-            properties: {
-              addressPrefix: subnet.properties.addressPrefix
-              networkSecurityGroup: {
-                id: aaddsNsg.id
-              }
-            }
-          }
-
-          // Deploy Azure AD Domain Services
-          resource aadds 'Microsoft.AAD/domainServices@2022-12-01' = {
-            name: 'aadds-${environment}'
-            location: location
-            tags: tags
-            properties: {
-              domainName: domainName
-              domainConfigurationType: 'FullySynced'
-              sku: sku
-              replicaSets: [
-                {
-                  subnetId: subnet.id
-                  location: location
-                }
-              ]
-            }
-            dependsOn: [
-              subnetWithNsg
-            ]
-          }
-
-          // Output AADDS resource ID
-          output aaddsId string = aadds.id
-          output aaddsName string = aadds.name
-          EOF
-          
-          echo "Azure AD Domain Services template created."
-      
       - name: Deploy Azure AD Domain Services
         run: |
           echo "Deploying Azure AD Domain Services..."
+          
+          # Create directory if it doesn't exist
+          mkdir -p identity/aadds
+          
+          # Create template file if it doesn't exist
+          if [ ! -f "identity/aadds/aadds.bicep" ]; then
+            cat > identity/aadds/aadds.bicep << 'EOF'
+            // Azure AD Domain Services for cloud-only environment
+            @description('Azure region for all resources')
+            param location string = resourceGroup().location
+
+            @description('Environment name')
+            param environment string = 'production'
+
+            @description('Domain name for AADDS')
+            param domainName string = 'aadds.contoso.com'
+
+            @description('SKU for AADDS')
+            @allowed(['Standard', 'Enterprise', 'Premium'])
+            param sku string = 'Standard'
+
+            @description('ID of the identity VNet')
+            param vnetId string
+
+            @description('Name of the subnet for AADDS')
+            param aaddsSubnetName string = 'snet-domain-services'
+
+            @description('Tags to apply to all resources')
+            param tags object = {
+              environment: environment
+              workload: 'identity'
+              deployment: 'bicep'
+            }
+
+            // Extract VNet name from VNet ID
+            var vnetName = split(vnetId, '/')[8]
+
+            // Reference the subnet for AADDS
+            resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-04-01' existing = {
+              name: '${vnetName}/${aaddsSubnetName}'
+            }
+
+            // Create a Network Security Group for AADDS
+            resource aaddsNsg 'Microsoft.Network/networkSecurityGroups@2023-04-01' = {
+              name: 'nsg-aadds'
+              location: location
+              tags: tags
+              properties: {
+                securityRules: [
+                  {
+                    name: 'AllowLDAPS'
+                    properties: {
+                      priority: 201
+                      direction: 'Inbound'
+                      access: 'Allow'
+                      protocol: 'Tcp'
+                      sourceAddressPrefix: '*'
+                      sourcePortRange: '*'
+                      destinationAddressPrefix: '*'
+                      destinationPortRange: '636'
+                    }
+                  }
+                  {
+                    name: 'AllowLDAP'
+                    properties: {
+                      priority: 202
+                      direction: 'Inbound'
+                      access: 'Allow'
+                      protocol: 'Tcp'
+                      sourceAddressPrefix: '*'
+                      sourcePortRange: '*'
+                      destinationAddressPrefix: '*'
+                      destinationPortRange: '389'
+                    }
+                  }
+                  {
+                    name: 'AllowKerberos'
+                    properties: {
+                      priority: 203
+                      direction: 'Inbound'
+                      access: 'Allow'
+                      protocol: 'Tcp'
+                      sourceAddressPrefix: '*'
+                      sourcePortRange: '*'
+                      destinationAddressPrefix: '*'
+                      destinationPortRange: '88'
+                    }
+                  }
+                ]
+              }
+            }
+
+            // Deploy Azure AD Domain Services
+            resource aadds 'Microsoft.AAD/domainServices@2022-12-01' = {
+              name: 'aadds-${environment}'
+              location: location
+              tags: tags
+              properties: {
+                domainName: domainName
+                domainConfigurationType: 'FullySynced'
+                sku: sku
+                replicaSets: [
+                  {
+                    subnetId: subnet.id
+                    location: location
+                  }
+                ]
+              }
+            }
+
+            // Output AADDS resource ID
+            output aaddsId string = aadds.id
+            output aaddsName string = aadds.name
+            EOF
+          fi
           
           # Get the VNet ID
           VNET_ID=$(az network vnet show \
@@ -703,14 +673,14 @@ jobs:
   # VERIFY IDENTITY RESOURCES JOB
   # ==========================================================================
   # PROMPT GUIDANCE:
-  # - Validation ensures all resources deployed successfully
-  # - Documentation shows what was deployed and where
-  # - Helps in troubleshooting deployment issues
-  # - AADDS verification is conditional since it's optional
+  # - Verify all deployed resources at the end of the workflow
+  # - Create summary report for easy validation
+  # - Show diagnostic information for any failures
   # ==========================================================================
   verify-identity-resources:
     name: Verify Identity Resources
     needs: [deploy-key-vault, deploy-managed-identities]
+    # Using "always()" to run even if some jobs fail
     if: always()
     runs-on: ubuntu-latest
     
@@ -740,14 +710,6 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name "vnet-identity" &>/dev/null; then
             echo "✅ Identity VNet verified"
-            
-            # List subnets
-            echo "Subnets in identity VNet:"
-            az network vnet subnet list \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --vnet-name "vnet-identity" \
-              --query "[].{Name:name, Prefix:addressPrefix}" \
-              --output table
           else
             echo "❌ Identity VNet not found"
           fi
@@ -775,7 +737,7 @@ jobs:
             echo "❌ Managed identities not found"
           fi
           
-          # Use proper expression syntax for shell scripts
+          # Note: Using proper variable reference syntax in shell scripts
           if [ "${{ env.DEPLOY_AADDS }}" == "true" ]; then
             if az resource list \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -788,9 +750,9 @@ jobs:
             fi
           fi
           
-          # Generate deployment report
+          # Generate summary report
           cat << EOF > $GITHUB_STEP_SUMMARY
-          # Identity Resources Deployment Summary
+          # Identity Resources Deployment Results
           
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
@@ -806,13 +768,13 @@ jobs:
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ env.DEPLOY_AADDS }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## GitHub Actions Conditionals Reference
+          ## GitHub Actions Syntax Quick Reference
           
           | Context | Correct Syntax | Notes |
           |---------|---------------|-------|
-          | Job-level if | \`if: env.VAR == 'value'\` | No curly braces needed |
-          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | Curly braces required |
-          | Shell scripts | \`if [ "\${{ env.VAR }}" == "value" ]\` | Curly braces required for variable |
+          | Job-level if | \`if: env.VAR == 'value'\` | **NO curly braces** |
+          | Step-level if | \`if: \${{ steps.id.outputs.value == 'true' }}\` | Requires curly braces |
+          | Shell scripts | \`if [ "\${{ env.VAR }}" == "value" ]\` | Requires curly braces |
           
           Deployment completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           EOF
