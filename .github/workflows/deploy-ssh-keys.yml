@@ -1,0 +1,78 @@
+# ==========================================================================
+# Enterprise Azure Landing Zone - SSH Key Management
+# ==========================================================================
+# PROMPT ENGINEERING GUIDANCE:
+# This workflow manages SSH public keys for secure infrastructure access:
+# - Deploys SSH public keys to Azure Key Vault
+# - Configures Linux VM deployment templates to use the keys
+# - Sets up rotation schedules and access policies
+#
+# SECRETS CONFIGURATION:
+# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
+# - AZURE_CLIENT_ID: App registration client ID with federated credentials
+# - MANAGEMENT_SUBSCRIPTION_ID: Subscription for key management
+# - SSH_PUBLIC_KEY: The actual SSH public key content
+#
+# SECURITY CONSIDERATIONS:
+# - Never store private keys in GitHub secrets or actions
+# - Only public keys should be deployed to Azure
+# - Use Key Vault for secure key management
+# - Consider using certificate-based authentication instead of keys for production
+
+name: Deploy SSH Public Keys
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - test
+          - production
+
+permissions:
+  id-token: write  # Required for OIDC federation
+  contents: read   # Required to read repo files
+
+# ==========================================================================
+# ENVIRONMENT VARIABLES - SSH KEY CONFIGURATION
+# ==========================================================================
+# PROMPT GUIDANCE:
+# - SSH_PUBLIC_KEY should only contain public key material, never private keys
+# - Key Vault must exist before running this workflow
+# - Service principal needs Key Vault Contributor permissions
+# - Use separate keys for different environments
+# ==========================================================================
+env:
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
+  SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+  KEY_VAULT_NAME: kv-management-shared
+  ENVIRONMENT: ${{ github.event.inputs.environment }}
+
+jobs:
+  deploy-ssh-key:
+    name: Deploy SSH Public Key
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Verify SSH key is provided
+        run: |
+          if [ -z "${{ secrets.SSH_PUBLIC_KEY }}" ]; then
+            echo "::error::SSH_PUBLIC_KEY secret is not set"
+            exit 1
+          fi
+          
+          # Verify it's an actual public key (simple validation)
+          if [[ "${{ secrets.SSH_PUBLIC_KEY }}" != ssh-rsa* ]] && [[ "${{ secrets.SSH_PUBLIC_KEY }}" != ssh-ed25519* ]]; then
+            echo "::error::SSH_PUBLIC_KEY doesn't appear to be a valid public key"
+            exit 1
+          fi
+
+      # Login and key vault deployment steps would follow...

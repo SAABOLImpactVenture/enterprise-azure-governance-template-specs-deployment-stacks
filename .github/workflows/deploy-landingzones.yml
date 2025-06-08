@@ -1,0 +1,140 @@
+# ==========================================================================
+# Enterprise Azure Landing Zone - Landing Zone Resources Deployment
+# ==========================================================================
+# PROMPT ENGINEERING GUIDANCE:
+# This workflow deploys resources for application landing zones:
+# - Landing zone virtual networks with appropriate subnets
+# - Landing zone-specific policies
+# - Service connections to hub resources
+# - Initial bootstrap resources (KeyVault, Storage, etc)
+#
+# SECRETS CONFIGURATION:
+# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
+# - AZURE_CLIENT_ID: App registration client ID with federated credentials
+# - LANDINGZONE_A2_SUBSCRIPTION_ID: Analytics landing zone subscription
+# - LANDINGZONE_P1_SUBSCRIPTION_ID: Production landing zone subscription
+# - CONNECTIVITY_SUBSCRIPTION_ID: For hub network integration
+#
+# CUSTOMIZATION TIPS:
+# - Add/remove landing zone subscriptions as needed for your environments
+# - Ensure matching management group structure exists in Azure
+# - Configure landing zone policies to match your security requirements
+
+name: Deploy Landing Zone Resources
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'landingzones/**'
+      - '.github/workflows/deploy-landingzones.yml'
+  
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - nonproduction
+          - development
+      landingZone:
+        description: 'Landing zone to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - analytics-a2
+          - production-p1
+      region:
+        description: 'Azure region for deployment'
+        required: true
+        default: 'eastus2'
+        type: string
+
+permissions:
+  id-token: write  # Required for OIDC federation
+  contents: read   # Required to read repo files
+
+# ==========================================================================
+# ENVIRONMENT VARIABLES - MULTIPLE SUBSCRIPTION CONFIGURATION
+# ==========================================================================
+# PROMPT GUIDANCE:
+# - Landing zones use separate subscriptions based on workload type
+# - Each subscription needs a corresponding secret
+# - For shared components, the connectivity subscription is also needed
+# - Add additional subscription IDs as your landing zones grow
+# ==========================================================================
+env:
+  # Authentication
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  
+  # Landing Zone Subscriptions
+  LANDINGZONE_A2_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}
+  LANDINGZONE_P1_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}
+  
+  # Hub Network Subscription (for peering)
+  CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
+  
+  # Deployment parameters
+  LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+
+jobs:
+  # First job verifies all required secrets exist
+  verify-prerequisites:
+    name: Verify Prerequisites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        run: |
+          # Verify authentication secrets
+          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "::error::AZURE_TENANT_ID secret is not set"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+            echo "::error::AZURE_CLIENT_ID secret is not set"
+            exit 1
+          fi
+          
+          # Determine which landing zones to verify based on input
+          SELECTED_LZ="${{ github.event.inputs.landingZone }}"
+          
+          if [[ "$SELECTED_LZ" == "all" || "$SELECTED_LZ" == "analytics-a2" ]]; then
+            if [ -z "${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}" ]; then
+              echo "::error::LANDINGZONE_A2_SUBSCRIPTION_ID secret is not set"
+              exit 1
+            fi
+          fi
+          
+          if [[ "$SELECTED_LZ" == "all" || "$SELECTED_LZ" == "production-p1" ]]; then
+            if [ -z "${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}" ]; then
+              echo "::error::LANDINGZONE_P1_SUBSCRIPTION_ID secret is not set"
+              exit 1
+            fi
+          fi
+          
+          # Verify connectivity subscription for peering operations
+          if [ -z "${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}" ]; then
+            echo "::warning::CONNECTIVITY_SUBSCRIPTION_ID secret is not set. Network peering operations may fail."
+          fi
+          
+          echo "All required secrets are configured for selected landing zones."
+          
+          # Set subscription variables for downstream jobs based on selection
+          if [[ "$SELECTED_LZ" == "analytics-a2" ]]; then
+            echo "TARGET_SUBSCRIPTION_ID=${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+            echo "TARGET_LANDING_ZONE=analytics-a2" >> $GITHUB_ENV
+          elif [[ "$SELECTED_LZ" == "production-p1" ]]; then
+            echo "TARGET_SUBSCRIPTION_ID=${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+            echo "TARGET_LANDING_ZONE=production-p1" >> $GITHUB_ENV
+          fi
+
+  # Additional landing-zone-specific deployment jobs would follow...

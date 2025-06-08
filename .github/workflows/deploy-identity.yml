@@ -1,0 +1,101 @@
+# ==========================================================================
+# Enterprise Azure Landing Zone - Identity Resources Deployment
+# ==========================================================================
+# PROMPT ENGINEERING GUIDANCE:
+# This workflow deploys core identity resources for an enterprise landing zone:
+# - Azure AD DS or Azure AD Connect
+# - Key Vault for identity-related secrets
+# - Log Analytics workspace for identity monitoring
+# - User-assigned managed identities
+#
+# SECRETS CONFIGURATION:
+# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
+# - AZURE_CLIENT_ID: App registration client ID with federated credentials
+# - IDENTITY_SUBSCRIPTION_ID: Dedicated subscription for identity resources
+#
+# CUSTOMIZATION TIPS:
+# - Adjust resource naming in parameters files to match your standards
+# - Configure Azure AD DS settings based on your directory requirements
+# - Consider security and compliance requirements for KeyVault configuration
+
+name: Deploy Identity Resources
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'identity/**'
+      - '.github/workflows/deploy-identity.yml'
+  
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - nonproduction
+          - development
+      region:
+        description: 'Azure region for deployment'
+        required: true
+        default: 'eastus2'
+        type: string
+
+permissions:
+  id-token: write  # Required for OIDC federation
+  contents: read   # Required to read repo files
+
+# ==========================================================================
+# ENVIRONMENT VARIABLES - CRITICAL SECRET CONFIGURATION
+# ==========================================================================
+# PROMPT GUIDANCE:
+# - Identity subscription should be separate from other workloads
+# - IDENTITY_SUBSCRIPTION_ID must exist as a repository secret
+# - The service principal requires appropriate RBAC in the identity subscription
+# - Consider using Azure PIM for Eligible roles rather than permanent assignment
+# ==========================================================================
+env:
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  IDENTITY_SUBSCRIPTION_ID: ${{ secrets.IDENTITY_SUBSCRIPTION_ID }}
+  RESOURCE_GROUP_NAME: rg-identity
+  LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+
+jobs:
+  verify-prerequisites:
+    name: Verify Prerequisites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        run: |
+          # Verify tenant ID
+          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "::error::AZURE_TENANT_ID secret is not set"
+            exit 1
+          fi
+          
+          # Verify client ID
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+            echo "::error::AZURE_CLIENT_ID secret is not set"
+            exit 1
+          fi
+          
+          # Verify subscription ID
+          if [ -z "${{ secrets.IDENTITY_SUBSCRIPTION_ID }}" ]; then
+            echo "::error::IDENTITY_SUBSCRIPTION_ID secret is not set"
+            exit 1
+          fi
+          
+          echo "All required secrets are configured."
+          
+          # Determine subscription to use
+          SUB_ID="${{ secrets.IDENTITY_SUBSCRIPTION_ID }}"
+          echo "Using subscription ID: ${SUB_ID:0:8}..."
+          echo "SUBSCRIPTION_ID=$SUB_ID" >> $GITHUB_ENV
+
+  # Additional Identity-specific deployment jobs would follow...

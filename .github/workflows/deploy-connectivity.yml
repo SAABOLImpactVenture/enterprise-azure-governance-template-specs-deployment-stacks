@@ -2,17 +2,26 @@
 # Enterprise Azure Landing Zone - Connectivity Resources Deployment
 # ==========================================================================
 # PROMPT ENGINEERING GUIDANCE:
-# - This workflow deploys the connectivity resources for an Enterprise Azure Landing Zone
-# - IMPORTANT: The CONNECTIVITY_SUBSCRIPTION_ID secret MUST be configured in your repository
-# - Configure federated identity with exact subject: repo:ORG/REPO:environment:ENVIRONMENT_NAME
-# - Adjust parameters files in connectivity/ directory for your environment needs
+# This workflow deploys core connectivity resources for an enterprise landing zone:
+# - Hub virtual networks, subnets, and NSGs
+# - Azure Firewall and policy
+# - Azure Bastion
+# - VNet peering between hub and spokes
+# - Private DNS zones
+#
+# SECRETS CONFIGURATION:
+# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
+# - AZURE_CLIENT_ID: App registration client ID with federated credentials
+# - CONNECTIVITY_SUBSCRIPTION_ID: Dedicated subscription for network resources
+#
+# CUSTOMIZATION TIPS:
+# - Adjust resource naming in parameters files to match your standards
+# - Modify address spaces in hub-network.parameters.json for your IP scheme
+# - Set firewall SKU based on your requirements (Standard vs Premium)
+# - Add/remove private DNS zones based on services you plan to use
 
 name: Deploy Connectivity Resources
 
-# ==========================================================================
-# EVENT TRIGGERS
-# PROMPT GUIDANCE: Define when this workflow should run
-# ==========================================================================
 on:
   push:
     branches:
@@ -37,37 +46,29 @@ on:
         required: true
         default: 'eastus2'
         type: string
-      subscriptionId:
-        description: 'Optional: Override subscription ID (leave blank to use default)'
-        required: false
-        type: string
 
-# ==========================================================================
-# PERMISSIONS
-# PROMPT GUIDANCE: Minimum required permissions for OIDC auth
-# ==========================================================================
 permissions:
-  id-token: write
-  contents: read
+  id-token: write  # Required for OIDC federation
+  contents: read   # Required to read repo files
 
 # ==========================================================================
-# ENVIRONMENT VARIABLES
-# PROMPT GUIDANCE: Define global variables with clear comments
+# ENVIRONMENT VARIABLES - CRITICAL SECRET CONFIGURATION
+# ==========================================================================
+# PROMPT GUIDANCE: 
+# - Verify all three secrets exist in your GitHub repository settings
+# - CONNECTIVITY_SUBSCRIPTION_ID must be added manually before running
+# - Do not hardcode subscription IDs in workflow files
+# - If secrets are missing, the workflow will fail-fast with a clear error
 # ==========================================================================
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  # CRITICAL: This must be set in repository secrets!
   CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-connectivity-hub
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
 
 jobs:
-  # ==========================================================================
-  # VALIDATION AND SETUP JOB
-  # PROMPT GUIDANCE: Verify all prerequisites before deployment
-  # ==========================================================================
   verify-prerequisites:
     name: Verify Prerequisites
     runs-on: ubuntu-latest
@@ -95,14 +96,11 @@ jobs:
           echo "All required secrets are configured."
           
           # Determine subscription to use
-          SUB_ID="${{ github.event.inputs.subscriptionId || secrets.CONNECTIVITY_SUBSCRIPTION_ID }}"
+          SUB_ID="${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}"
           echo "Using subscription ID: ${SUB_ID:0:8}..."
           echo "SUBSCRIPTION_ID=$SUB_ID" >> $GITHUB_ENV
 
-  # ==========================================================================
-  # VALIDATION JOB
-  # PROMPT GUIDANCE: Validate templates before deployment
-  # ==========================================================================
+  # Remaining jobs from previous version...
   validate:
     name: Validate Templates
     needs: verify-prerequisites
@@ -114,6 +112,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # ==========================================================================
+      # AZURE LOGIN WITH OIDC - CRITICAL CONFIGURATION
+      # ==========================================================================
+      # PROMPT GUIDANCE:
+      # - Ensure subscription-id is provided (required after GitHub Actions update)
+      # - Verify federated credential in Azure with matching subject:
+      #   repo:ORG/REPO:environment:production
+      # - If authentication fails, check app registration and permissions
+      # ==========================================================================
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -121,19 +128,4 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.SUBSCRIPTION_ID }}
 
-      - name: List repository structure
-        run: |
-          echo "Repository contents:"
-          ls -la
-          
-          if [ -d "connectivity" ]; then
-            echo "Connectivity folder contents:"
-            ls -la connectivity
-          else
-            echo "::warning::Connectivity folder not found!"
-          fi
-
-      # Additional validation steps from your original workflow...
-
-  # Remaining jobs from your original workflow, ensuring each azure/login action 
-  # includes the subscription-id parameter...
+  # Additional jobs would follow with similar structure
