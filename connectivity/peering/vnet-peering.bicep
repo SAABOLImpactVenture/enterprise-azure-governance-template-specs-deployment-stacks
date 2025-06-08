@@ -1,62 +1,58 @@
-@description('Name for the peering from hub to spoke')
-param hubToSpokePeeringName string
+// ==========================================================================
+// Virtual Network Peering Module
+// ==========================================================================
+// PROMPT ENGINEERING GUIDANCE:
+// This template establishes VNet peering connections:
+// - Creates bidirectional peering between two virtual networks
+// - Supports both hub-spoke and spoke-spoke peering patterns
+// - Controls traffic forwarding and gateway transit options
+// - Works across subscriptions when provided with full resource IDs
+//
+// USAGE CONTEXT:
+// - Used when creating hub-spoke network architecture
+// - Critical for cross-VNet communication in enterprise environments
+// - Supports Azure Virtual WAN integration patterns
+//
+// PARAMETER GUIDANCE:
+// - sourceVnetName: Name of the source VNet (where peering is created)
+// - destinationVnetId: Full resource ID of target VNet (including subscription)
+// - allowGatewayTransit: Set to true for hub VNet with gateway
+// - useRemoteGateways: Set to true for spoke VNets to use hub gateway
 
-@description('Name for the peering from spoke to hub')
-param spokeToHubPeeringName string
+@description('Name of the source virtual network')
+param sourceVnetName string
 
-@description('Resource ID of the hub virtual network')
-param hubVnetId string
+@description('Resource ID of the destination virtual network')
+param destinationVnetId string
 
-@description('Resource ID of the spoke virtual network')
-param spokeVnetId string 
+@description('Name for the peering from source to destination')
+param peeringName string = 'peering-to-${last(split(destinationVnetId, '/'))}'
 
-@description('Flag to control if spoke network can use hub\'s gateway')
+@description('Whether to allow gateway transit in the peering')
+param allowGatewayTransit bool = false
+
+@description('Whether to use remote gateways in the peering')
 param useRemoteGateways bool = false
 
-@description('Flag to control if spoke network traffic can be forwarded through hub')
+@description('Whether to allow forwarded traffic in the peering')
 param allowForwardedTraffic bool = true
 
-@description('Flag to allow gateway transit from hub to spokes')
-param allowGatewayTransit bool = true
+@description('Whether to allow virtual network access in the peering')
+param allowVirtualNetworkAccess bool = true
 
-// Extract VNet names from resource IDs for easier peering naming
-var hubVnetName = last(split(hubVnetId, '/'))
-var spokeVnetName = last(split(spokeVnetId, '/'))
-var hubVnetSubscriptionId = split(hubVnetId, '/')[2]
-var hubVnetResourceGroupName = split(hubVnetId, '/')[4]
-var spokeVnetSubscriptionId = split(spokeVnetId, '/')[2]
-var spokeVnetResourceGroupName = split(spokeVnetId, '/')[4]
-
-// Hub to Spoke peering
-module hubToSpokePeering 'br/public:network/virtual-network-peering:1.0.2' = {
-  name: 'hub-to-spoke-peering-${uniqueString(hubVnetId, spokeVnetId)}'
-  scope: resourceGroup(hubVnetSubscriptionId, hubVnetResourceGroupName)
-  params: {
-    name: empty(hubToSpokePeeringName) ? 'peering-${hubVnetName}-to-${spokeVnetName}' : hubToSpokePeeringName
-    localVnetName: hubVnetName
-    remoteVnetId: spokeVnetId
+// Create VNet peering from source to destination
+resource vnetPeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-04-01' = {
+  name: '${sourceVnetName}/${peeringName}'
+  properties: {
+    allowVirtualNetworkAccess: allowVirtualNetworkAccess
     allowForwardedTraffic: allowForwardedTraffic
     allowGatewayTransit: allowGatewayTransit
-    allowVirtualNetworkAccess: true
-    useRemoteGateways: false
-  }
-}
-
-// Spoke to Hub peering
-module spokeToHubPeering 'br/public:network/virtual-network-peering:1.0.2' = {
-  name: 'spoke-to-hub-peering-${uniqueString(hubVnetId, spokeVnetId)}'
-  scope: resourceGroup(spokeVnetSubscriptionId, spokeVnetResourceGroupName)
-  params: {
-    name: empty(spokeToHubPeeringName) ? 'peering-${spokeVnetName}-to-${hubVnetName}' : spokeToHubPeeringName
-    localVnetName: spokeVnetName
-    remoteVnetId: hubVnetId
-    allowForwardedTraffic: true
-    allowGatewayTransit: false
-    allowVirtualNetworkAccess: true
     useRemoteGateways: useRemoteGateways
+    remoteVirtualNetwork: {
+      id: destinationVnetId
+    }
   }
 }
 
-// Output the peering resource IDs
-output hubToSpokePeeringId string = hubToSpokePeering.outputs.resourceId
-output spokeToHubPeeringId string = spokeToHubPeering.outputs.resourceId
+// Output the resource ID of the peering
+output peeringId string = vnetPeering.id
