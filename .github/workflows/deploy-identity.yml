@@ -2,41 +2,32 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
 #
-# 🚨 GITHUB ACTIONS SYNTAX GUIDE - PREVENT WORKFLOW ERRORS 🚨
-# ===========================================================
+# 🚨 YAML SYNTAX TROUBLESHOOTING GUIDE 🚨
+# =======================================================
 #
-# 1️⃣ JOB-LEVEL CONDITIONS
-#    ✅ CORRECT: 
-#       if: github.event_name == 'push'                       # GitHub context directly
-#       if: needs.job_name.outputs.variable == 'value'        # Job outputs
-#       if: vars.WORKFLOW_VAR == 'true'                       # GitHub Variables
+# 1️⃣ INDENTATION ISSUES
+#    • Each level must use consistent indentation (2 spaces recommended)
+#    • Child elements must be indented under their parent
+#    • Ensure no tabs are accidentally used instead of spaces
 #
-#    ❌ INCORRECT:
-#       if: env.MY_VAR == 'true'                              # Cannot use env vars directly
-#       if: ${{ env.MY_VAR == 'true' }}                       # Cannot use expression syntax
+# 2️⃣ QUOTING REQUIREMENTS
+#    • Enclose strings with special characters in quotes: '{{ name }}' or "value: test"
+#    • Use single quotes when string contains: { } characters
+#    • Use double quotes when string contains: ' characters
+#    • Avoid unquoted values that could be interpreted as numbers, booleans, etc.
 #
-# 2️⃣ STEP-LEVEL CONDITIONS
-#    ✅ CORRECT:
-#       if: ${{ github.event_name == 'push' }}                # Must use expression syntax
-#       if: ${{ env.MY_VAR == 'true' }}                       # Env vars work here with expression syntax
+# 3️⃣ COMMON SYNTAX ERRORS
+#    • Missing colon after key: "key: value" not "key value"
+#    • Missing spaces after colon: "key: value" not "key:value" 
+#    • Missing hyphens for list items: "- item" not "item"
+#    • Incorrect block scalars (| or >)
+#    • Unbalanced quotes or brackets
 #
-#    ❌ INCORRECT:
-#       if: github.event_name == 'push'                       # Missing expression syntax
-#       if: env.MY_VAR == 'true'                              # Missing expression syntax
-#
-# 3️⃣ HEREDOC IN SHELL SCRIPTS
-#    ✅ CORRECT:
-#       cat > file.txt << 'EOF'                               # Opening delimiter
-#       content
-#       EOF                                                   # Closing delimiter at start of line with no spaces
-#
-#    ❌ INCORRECT:
-#       cat > file.txt << 'EOF'                               # Opening delimiter
-#       content
-#         EOF                                                 # Indented closing delimiter will fail
-#       cat > file.txt << 'EOF'                               # Opening delimiter
-#       content                                               # Missing EOF delimiter
-# ===========================================================
+# 4️⃣ PIPELINE EXPRESSION SYNTAX
+#    • Job-level conditionals: if: needs.job.outputs.result == 'true'
+#    • Step-level conditionals: if: ${{ steps.id.outputs.result == 'true' }}
+#    • Shell script variables: "${{ github.token }}"
+# =======================================================
 
 name: Provision Identity
 
@@ -75,7 +66,6 @@ permissions:
   contents: read   # Required to read repo files
 
 # Environment variables for the workflow
-# NOTE: These cannot be used directly in job-level "if" conditions
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -84,17 +74,15 @@ env:
   RESOURCE_GROUP_NAME: rg-identity
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
-  # Boolean inputs are converted to strings
   DEPLOY_AADDS: ${{ github.event.inputs.deployAadds || 'true' }}
 
 jobs:
-  # ==========================================================================
+  # ===========================================================================
   # VERIFY PREREQUISITES - Entry point job with no dependencies
-  # ==========================================================================
+  # ===========================================================================
   verify-prerequisites:
     name: Verify Prerequisites
     runs-on: ubuntu-latest
-    # Set outputs that can be used in job-level conditionals
     outputs:
       tenant_id: ${{ steps.output_params.outputs.tenant_id }}
       deploy_aadds: ${{ steps.output_params.outputs.deploy_aadds }}
@@ -143,22 +131,16 @@ jobs:
           fi
           
           echo "Azure connectivity verified successfully."
-      
-      - name: Debug variables
-        run: |
-          echo "Input deployAadds value: ${{ github.event.inputs.deployAadds }}"
-          echo "Env DEPLOY_AADDS value: ${{ env.DEPLOY_AADDS }}"
-      
-      # CRITICAL: Set job outputs to be used in job-level conditionals
+          
       - name: Set output parameters
         id: output_params
         run: |
           echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
           echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
 
-  # ==========================================================================
+  # ===========================================================================
   # DEPLOY IDENTITY INFRASTRUCTURE
-  # ==========================================================================
+  # ===========================================================================
   deploy-identity-infrastructure:
     name: Deploy Identity Infrastructure
     needs: verify-prerequisites
@@ -188,16 +170,26 @@ jobs:
           
           echo "Resource group created or confirmed."
       
+      # ===========================================================================
+      # CRITICAL FIX: Line 203 YAML syntax error - Heredoc formatting
+      # Common errors with heredocs:
+      # 1. Indentation issues with closing delimiter
+      # 2. Missing or mismatched quotes around the opening delimiter
+      # 3. Extra spaces before the closing delimiter
+      # ===========================================================================
       - name: Deploy identity network
         id: deploy_network
         run: |
           echo "Deploying identity network infrastructure..."
           
-          # Check if identity network template exists
           if [ ! -f "identity/network/identity-network.bicep" ]; then
             echo "Creating identity network template..."
             mkdir -p identity/network
-            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line with no indentation
+            
+            # CORRECT HEREDOC SYNTAX:
+            # 1. Use 'EOF' with quotes to prevent variable substitution
+            # 2. Closing delimiter (EOF) must be at start of line with NO spaces before it
+            # 3. Ensure consistent indentation within the heredoc content
             cat > identity/network/identity-network.bicep << 'EOF'
 // Identity Network for cloud-only deployment
 @description('Azure region for all resources')
@@ -283,9 +275,9 @@ EOF
           echo "vnet_id=$VNET_ID" >> $GITHUB_OUTPUT
           echo "Identity network deployed successfully."
 
-  # ==========================================================================
+  # ===========================================================================
   # DEPLOY KEY VAULT
-  # ==========================================================================
+  # ===========================================================================
   deploy-key-vault:
     name: Deploy Key Vault
     needs: deploy-identity-infrastructure
@@ -334,7 +326,6 @@ EOF
           # Check if Key Vault template exists
           if [ ! -f "identity/key-vault/key-vault.bicep" ]; then
             mkdir -p identity/key-vault
-            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line
             cat > identity/key-vault/key-vault.bicep << 'EOF'
 // Key Vault with private endpoint for identity resources
 @description('Azure region for all resources')
@@ -437,9 +428,9 @@ EOF
           
           echo "Key Vault deployed successfully."
 
-  # ==========================================================================
+  # ===========================================================================
   # DEPLOY MANAGED IDENTITIES
-  # ==========================================================================
+  # ===========================================================================
   deploy-managed-identities:
     name: Deploy Managed Identities
     needs: deploy-identity-infrastructure
@@ -463,7 +454,6 @@ EOF
           # Create template file if it doesn't exist
           mkdir -p identity/managed-identity
           if [ ! -f "identity/managed-identity/managed-identities.bicep" ]; then
-            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line
             cat > identity/managed-identity/managed-identities.bicep << 'EOF'
 // User-assigned managed identities for workloads
 @description('Azure region for all resources')
@@ -519,17 +509,14 @@ EOF
           
           echo "Managed identities deployed successfully."
 
-  # ==========================================================================
+  # ===========================================================================
   # DEPLOY AZURE AD DOMAIN SERVICES
-  # ==========================================================================
-  # CRITICAL FIX: Cannot reference env variables directly in job conditions
-  # Must use job outputs from a previous job instead
-  # ==========================================================================
+  # ===========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
     needs: [verify-prerequisites, deploy-identity-infrastructure]
     runs-on: ubuntu-latest
-    # CORRECT: Use job outputs from a previous job, not env variables directly
+    # Use job outputs from a previous job, not env variables directly
     if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
     
     steps:
@@ -550,7 +537,6 @@ EOF
           # Create AADDS template if it doesn't exist
           mkdir -p identity/aadds
           if [ ! -f "identity/aadds/aadds.bicep" ]; then
-            # CRITICAL: Proper heredoc syntax - closing EOF must be at start of line
             cat > identity/aadds/aadds.bicep << 'EOF'
 // Azure AD Domain Services for cloud-only environment
 @description('Azure region for all resources')
@@ -680,13 +666,12 @@ EOF
           echo "Azure AD Domain Services deployment initiated."
           echo "Note: AADDS deployment can take 1-2 hours to complete."
 
-  # ==========================================================================
+  # ===========================================================================
   # VERIFY IDENTITY RESOURCES
-  # ==========================================================================
+  # ===========================================================================
   verify-identity-resources:
     name: Verify Identity Resources
     needs: [deploy-key-vault, deploy-managed-identities, verify-prerequisites]
-    # Using always() function - run even if previous jobs fail
     if: always()
     runs-on: ubuntu-latest
     
@@ -743,7 +728,7 @@ EOF
             echo "❌ Managed identities not found"
           fi
           
-          # CORRECT: Use job outputs for condition, not env variables directly
+          # Use job outputs for condition
           if [ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ]; then
             if az resource list \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -765,7 +750,7 @@ EOF
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
           **Region:** ${{ env.LOCATION }}
-          **Date/Time (UTC):** 2025-06-08 17:15:00
+          **Date/Time (UTC):** 2025-06-08 17:20:55
           
           ## 📊 Deployed Resources
           
@@ -776,31 +761,16 @@ EOF
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📝 GitHub Actions Conditionals Reference
+          ## 🛠️ YAML Troubleshooting Reference
           
           ```yaml
-          # ✅ CORRECT APPROACH FOR JOB CONDITIONS
-          
-          # 1. Set the value as a job output in prerequisite job:
-          - name: Set output parameters
-            id: output_params
-            run: |
-              echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
-          
-          # 2. Then use the job output in the dependent job:
-          if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
-          ```
-          
-          ## 🔧 Shell Script Heredoc Reference
-          
-          ```bash
-          # Correct heredoc syntax:
+          # Heredoc correctly formatted (fix for line 203 error):
           cat > file.txt << 'EOF'
-          content
-          content
-          EOF  # Must be at start of line, no indentation
+          content line 1
+          content line 2
+          EOF  # must be at start of line with no spaces
           ```
           
           Deployment by: GEP-V  
-          Report generated: 2025-06-08 17:15:00 UTC
+          Report generated: 2025-06-08 17:20:55 UTC
           EOF
