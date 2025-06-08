@@ -9,12 +9,14 @@
 # - User-assigned managed identities for workload authentication
 # - Private DNS integration with connectivity subscription
 #
-# SYNTAX ERROR PREVENTION:
-# 1. CRITICAL: All environment variables in conditionals must use ${{ env.VAR }} syntax
-#    - CORRECT: if: ${{ env.DEPLOY_AADDS == 'true' }}
-#    - WRONG: if: env.DEPLOY_AADDS == 'true'  <- This will cause errors!
-# 2. Check ALL conditionals in the workflow - errors can occur in any job or step
-# 3. This includes both job-level and step-level conditionals
+# CRITICAL SYNTAX FIXES:
+# 1. For environment variable conditionals, ALWAYS use ${{ env.VAR }} syntax
+#    - CORRECT ✓: if: ${{ env.DEPLOY_AADDS == 'true' }}
+#    - WRONG ✗: if: env.DEPLOY_AADDS == 'true'
+#    - WRONG ✗: if: $[ env.DEPLOY_AADDS == 'true' }]
+# 2. Check shell script conditionals too: [ "${{ env.VAR }}" == "value" ]
+# 3. Scan entire file for any expressions using env variables
+# 4. Use consistent quotes: 'single quotes' for string literals in conditionals
 
 name: Deploy Identity Resources
 
@@ -658,7 +660,7 @@ jobs:
     name: Deploy Azure AD Domain Services
     needs: [deploy-identity-infrastructure, deploy-key-vault]
     runs-on: ubuntu-latest
-    # SYNTAX FIX: Proper environment variable reference in conditional
+    # CRITICAL FIX: Changed from incorrect $[ env.DEPLOY_AADDS == 'true' }] to correct syntax
     if: ${{ env.DEPLOY_AADDS == 'true' }}
     
     steps:
@@ -1071,10 +1073,11 @@ jobs:
              - Assign appropriate RBAC roles to managed identities
              - Update applications to use managed identities
           
-          ## Deployment Notes
+          ## Common Troubleshooting Tips
           
-          - Cloud-only environment with no on-premises connectivity
-          - Private endpoints used for secure service access
-          - VNet peering established with hub network (if available)
-          - Log Analytics workspace configured for monitoring
+          - Environment variable problems in conditionals? Use proper syntax: ${{ '\${{ env.VAR_NAME }}' }}
+          - Network connectivity issues? Check NSG rules and VNet peering settings
+          - Permission failures? Verify service principal has appropriate roles
+          - Resource not found? Check for typos in resource names and deployment errors
+          - AADDS taking long? This is normal, provisioning can take 1-2 hours
           EOF
