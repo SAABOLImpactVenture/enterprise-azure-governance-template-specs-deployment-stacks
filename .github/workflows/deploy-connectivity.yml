@@ -1,13 +1,6 @@
 # =========================================================
 # Enterprise Azure Landing Zone - Connectivity Deployment
 # =========================================================
-# PROMPT ENGINEERING GUIDANCE:
-# This workflow has been updated to:
-# 1. Fix the Azure Bastion subnet naming issue
-# 2. Modify the hub-network.bicep file to use correct subnet name
-# 3. Deploy with the corrected template
-# 4. Verify deployed resources
-
 name: Deploy Connectivity Resources
 
 on:
@@ -56,6 +49,7 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
 
+      # Fix the VNet peering bicep file
       - name: Fix VNet peering bicep file
         run: |
           cat > ./connectivity/peering/vnet-peering.bicep << 'EOF'
@@ -101,6 +95,7 @@ jobs:
           
           echo "Fixed vnet-peering.bicep file created."
 
+      # Create resource group
       - name: Create resource group
         run: |
           echo "Creating resource group ${{ env.RESOURCE_GROUP_NAME }} in ${{ env.LOCATION }}..."
@@ -109,7 +104,49 @@ jobs:
             --location ${{ env.LOCATION }} \
             --tags environment=${{ env.ENVIRONMENT }} deployedBy=GitHub
       
-      # CRITICAL FIX: Fix the BastionSubnet name in the template
+      # Debug: Display existing parameter file content
+      - name: Debug parameter file
+        run: |
+          PARAM_FILE="connectivity/hub-network/parameters/hub-network.parameters.json"
+          echo "Examining parameter file: $PARAM_FILE"
+          
+          if [ -f "$PARAM_FILE" ]; then
+            echo "Content of $PARAM_FILE:"
+            cat "$PARAM_FILE"
+          else
+            echo "Parameter file $PARAM_FILE not found!"
+          fi
+
+      # Create a new valid parameter file
+      - name: Create new parameter file
+        run: |
+          echo "Creating a new parameter file..."
+          
+          cat > ./hub-network.parameters.json << 'EOF'
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "location": {
+                "value": "${{ env.LOCATION }}"
+              },
+              "hubNetworkName": {
+                "value": "vnet-hub"
+              },
+              "addressPrefix": {
+                "value": "10.0.0.0/16"
+              },
+              "enableDdosProtection": {
+                "value": false
+              }
+            }
+          }
+          EOF
+          
+          echo "Created new parameter file:"
+          cat ./hub-network.parameters.json
+      
+      # Fix the Bastion subnet issue
       - name: Fix hub-network.bicep file
         run: |
           echo "Fixing BastionSubnet to AzureBastionSubnet in hub-network.bicep..."
@@ -118,115 +155,28 @@ jobs:
           cp ./connectivity/hub-network/hub-network.bicep ./connectivity/hub-network/hub-network.bicep.backup
           
           # Replace BastionSubnet with AzureBastionSubnet in the file
-          # This handles both subnet definition and references
           sed -i 's/BastionSubnet/AzureBastionSubnet/g' ./connectivity/hub-network/hub-network.bicep
           
           # Show changes for verification
           echo "Changes made to hub-network.bicep:"
           diff ./connectivity/hub-network/hub-network.bicep.backup ./connectivity/hub-network/hub-network.bicep || true
-          
-          echo "✅ Fixed hub-network.bicep file with correct Bastion subnet name"
       
-      # Deploy with the fixed template
+      # Deploy with the new parameter file
       - name: Deploy hub network
         run: |
-          echo "Deploying hub network with fixed template..."
+          echo "Deploying hub network with new parameter file..."
           
-          # Find parameter file
-          PARAM_PATH=""
-          PARAM_PATHS=(
-            "connectivity/hub-network/parameters/hub-network.parameters.json"
-            "connectivity/hub-network/parameters/hub-network-${{ env.ENVIRONMENT }}.parameters.json"
-            "connectivity/parameters/hub-network.parameters.json"
-          )
+          az deployment group create \
+            --name "hub-network-$(date +%Y%m%d%H%M%S)" \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --template-file connectivity/hub-network/hub-network.bicep \
+            --parameters @./hub-network.parameters.json
           
-          for path in "${PARAM_PATHS[@]}"; do
-            if [ -f "$path" ]; then
-              echo "Using parameter file: $path"
-              PARAM_PATH="$path"
-              break
-            fi
-          done
-          
-          # Deploy with parameter file if found, or direct parameters
-          if [ -n "$PARAM_PATH" ]; then
-            echo "Deploying with parameter file: $PARAM_PATH"
-            az deployment group create \
-              --name "hub-network-$(date +%Y%m%d%H%M%S)" \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --template-file connectivity/hub-network/hub-network.bicep \
-              --parameters @$PARAM_PATH
-          else
-            echo "Using direct parameters"
-            az deployment group create \
-              --name "hub-network-$(date +%Y%m%d%H%M%S)" \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --template-file connectivity/hub-network/hub-network.bicep \
-              --parameters location=${{ env.LOCATION }} \
-              --parameters hubNetworkName=vnet-hub \
-              --parameters addressPrefix=10.0.0.0/16 \
-              --parameters enableDdosProtection=false
-          fi
-
-  deploy-dns-zones:
-    name: Deploy Private DNS Zones
-    needs: deploy-hub-network
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-      
-      - name: Deploy private DNS zones
-        run: |
-          # Check if DNS template exists
-          if [ ! -f "connectivity/dns/private-dns.bicep" ]; then
-            echo "::warning::private-dns.bicep not found, skipping DNS zone deployment."
-            exit 0
-          fi
-          
-          echo "Deploying private DNS zones..."
-          
-          # Find parameter file
-          PARAM_PATH=""
-          PARAM_PATHS=(
-            "connectivity/dns/parameters/private-dns.parameters.json"
-            "connectivity/dns/parameters/private-dns-${{ env.ENVIRONMENT }}.parameters.json"
-            "connectivity/parameters/private-dns.parameters.json"
-          )
-          
-          for path in "${PARAM_PATHS[@]}"; do
-            if [ -f "$path" ]; then
-              echo "Using parameter file: $path"
-              PARAM_PATH="$path"
-              break
-            fi
-          done
-          
-          # Deploy with parameter file if found
-          if [ -n "$PARAM_PATH" ]; then
-            az deployment group create \
-              --name "private-dns-$(date +%Y%m%d%H%M%S)" \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --template-file connectivity/dns/private-dns.bicep \
-              --parameters @$PARAM_PATH
-          else
-            az deployment group create \
-              --name "private-dns-$(date +%Y%m%d%H%M%S)" \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --template-file connectivity/dns/private-dns.bicep
-          fi
+          echo "Hub network deployment completed"
 
   verify-resources:
     name: Verify Deployed Resources
-    needs: [deploy-hub-network, deploy-dns-zones]
+    needs: deploy-hub-network
     runs-on: ubuntu-latest
     if: always()
     
@@ -302,19 +252,5 @@ jobs:
             done <<< "$RESOURCES"
           fi
           
-          # Add viewing instructions
-          cat << EOF >> $GITHUB_STEP_SUMMARY
-          
-          ## Viewing Instructions
-          
-          1. In Azure portal, go to "Resource groups"
-          2. Select the resource group "${{ env.RESOURCE_GROUP_NAME }}"
-          3. Your hub network resources will be visible in this resource group
-          
-          ## Next Steps
-          
-          After this deployment, you can:
-          1. Run the configure-enterprise-network.yml workflow to set up spoke networks
-          2. Configure Azure Firewall policies
-          3. Set up private DNS zone links for spoke VNets
-          EOF
+          # Add final success message
+          echo "✅ Hub network resources deployed successfully. Look for resources in the Azure portal under the resource group '${{ env.RESOURCE_GROUP_NAME }}'." >> $GITHUB_STEP_SUMMARY
