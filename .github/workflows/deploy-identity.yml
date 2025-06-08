@@ -2,31 +2,37 @@
 # Enterprise Azure Landing Zone - Identity Resources Deployment
 # ==========================================================================
 #
-# 🔴 SYNTAX HANDBOOK: GITHUB ACTIONS CONDITIONALS 🔴
+# SYNTAX GUIDE: GITHUB ACTIONS CONDITIONALS
+# =========================================
 #
-# GitHub Actions has STRICT RULES for different contexts:
+# ⚠️ JOB-LEVEL CONDITIONALS - CRITICAL SYNTAX REQUIREMENTS ⚠️
 #
-# 1️⃣ JOB-LEVEL CONDITIONS - Line 700 Error Fix
-#    ✅ if: env.VAR == 'true'
-#    ✅ if: github.event_name == 'push'
-#    ✅ if: success() || failure()
+# Expressions in job-level conditionals follow special rules:
 #
-#    ❌ NEVER: if: ${{ env.VAR == 'true' }}
-#    ❌ NEVER: if: "${{ env.VAR == 'true' }}"
+# ✅ CORRECT:
+# - Using context properties directly:
+#   if: github.event_name == 'push'
+#   if: github.ref == 'refs/heads/main'
+#   if: success() || failure()
 #
-# 2️⃣ STEP-LEVEL CONDITIONS
-#    ✅ if: ${{ env.VAR == 'true' }}
-#    ✅ if: ${{ steps.id.outputs.result == 'value' }}
+# - Using workflow-level variables:
+#   if: vars.DEPLOY_FLAG == 'true'
 #
-#    ❌ NEVER: if: env.VAR == 'true'
-#    ❌ NEVER: if: steps.id.outputs.result == 'value'
+# ❌ INCORRECT:
+# - Using env variables directly at job level:
+#   if: env.DEPLOY_FLAG == 'true'  
 #
-# 3️⃣ SHELL SCRIPT VARIABLES
-#    ✅ if [ "${{ env.VAR }}" == "true" ]
-#    ✅ echo "${{ github.repository }}"
+# - Using expression syntax at job level:
+#   if: ${{ github.event_name == 'push' }}
 #
-#    ❌ NEVER: if [ "env.VAR" == "true" ]
-#    ❌ NEVER: echo "github.repository"
+# 🔧 PROPER SOLUTION FOR ENV VARIABLES IN JOB CONDITIONS:
+# 1. Set job output in a prerequisite job:
+#    steps:
+#      - id: set_vars
+#        run: echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
+#
+# 2. Reference that output in dependent job:
+#    if: needs.prerequisites.outputs.deploy_aadds == 'true'
 # ==========================================================================
 
 name: Provision Identity
@@ -65,7 +71,6 @@ permissions:
   id-token: write  # Required for OIDC federation
   contents: read   # Required to read repo files
 
-# Environment variables are always stored as strings
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -74,19 +79,20 @@ env:
   RESOURCE_GROUP_NAME: rg-identity
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
-  # Boolean inputs are converted to strings 'true' or 'false'
+  # This value can't be directly referenced in job-level conditionals
   DEPLOY_AADDS: ${{ github.event.inputs.deployAadds || 'true' }}
 
 jobs:
   # ==========================================================================
   # VERIFY PREREQUISITES - Entry point job with no dependencies
   # ==========================================================================
+  # This job also prepares variables that will be used in job-level conditionals
   verify-prerequisites:
     name: Verify Prerequisites
-    # No "needs" parameter - workflow must have at least one job without dependencies
     runs-on: ubuntu-latest
     outputs:
       tenant_id: ${{ steps.output_params.outputs.tenant_id }}
+      deploy_aadds: ${{ steps.output_params.outputs.deploy_aadds }}
       
     steps:
       - name: Checkout repository
@@ -133,15 +139,17 @@ jobs:
           
           echo "Azure connectivity verified successfully."
       
-      - name: Debug environment variables
+      - name: Debug variables
         run: |
-          echo "DEPLOY_AADDS value: ${{ env.DEPLOY_AADDS }}"
-          echo "Type of DEPLOY_AADDS: string (all env vars are strings)"
+          echo "Input deployAadds value: ${{ github.event.inputs.deployAadds }}"
+          echo "Env DEPLOY_AADDS value: ${{ env.DEPLOY_AADDS }}"
           
+      # CRITICAL: Set output variables that can be used in job-level conditions
       - name: Set output parameters
         id: output_params
         run: |
           echo "tenant_id=${{ env.AZURE_TENANT_ID }}" >> $GITHUB_OUTPUT
+          echo "deploy_aadds=${{ env.DEPLOY_AADDS }}" >> $GITHUB_OUTPUT
 
   # ==========================================================================
   # DEPLOY IDENTITY INFRASTRUCTURE
@@ -506,16 +514,17 @@ jobs:
   # ==========================================================================
   # DEPLOY AZURE AD DOMAIN SERVICES
   # ==========================================================================
-  # FIXME: Line 700 - job-level conditional must use correct syntax:
-  # ✅ CORRECT: if: env.DEPLOY_AADDS == 'true'
-  # ❌ WRONG: if: ${{ env.DEPLOY_AADDS == 'true' }}
+  # CRITICAL FIX: Line 510 - Cannot reference env variables directly in job conditions
+  # Instead, use an output from a previous job
+  # ✅ CORRECT: if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
+  # ❌ WRONG: if: env.DEPLOY_AADDS == 'true'
   # ==========================================================================
   deploy-azure-ad-domain-services:
     name: Deploy Azure AD Domain Services
-    needs: deploy-identity-infrastructure
+    needs: [verify-prerequisites, deploy-identity-infrastructure]
     runs-on: ubuntu-latest
-    # LINE 700 FIX: Job-level conditionals MUST NOT use expression syntax ${{ }}
-    if: env.DEPLOY_AADDS == 'true'
+    # LINE 510 FIX: Use job outputs instead of env variables for job-level conditions
+    if: needs.verify-prerequisites.outputs.deploy_aadds == 'true'
     
     steps:
       - name: Checkout repository
@@ -669,9 +678,8 @@ jobs:
   # ==========================================================================
   verify-identity-resources:
     name: Verify Identity Resources
-    needs: [deploy-key-vault, deploy-managed-identities]
+    needs: [deploy-key-vault, deploy-managed-identities, verify-prerequisites]
     # Using always() function - run even if previous jobs fail
-    # NOTE: This is a function, so no quotes needed
     if: always()
     runs-on: ubuntu-latest
     
@@ -728,8 +736,8 @@ jobs:
             echo "❌ Managed identities not found"
           fi
           
-          # CORRECT syntax for shell script variables
-          if [ "${{ env.DEPLOY_AADDS }}" == "true" ]; then
+          # CORRECT syntax for shell script variables - uses step's environment variables
+          if [ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ]; then
             if az resource list \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
               --resource-type "Microsoft.AAD/domainServices" \
@@ -743,9 +751,9 @@ jobs:
       
       - name: Create deployment report
         run: |
-          # Generate summary report with proper GitHub formatting
+          # Generate summary report
           cat << EOF > $GITHUB_STEP_SUMMARY
-          # 🛡️ Identity Resources Deployment Report
+          # 🔐 Identity Resources Deployment Report
 
           **Resource Group:** ${{ env.RESOURCE_GROUP_NAME }}
           **Environment:** ${{ env.ENVIRONMENT }}
@@ -759,31 +767,34 @@ jobs:
           | Virtual Network | $(az network vnet show --resource-group ${{ env.RESOURCE_GROUP_NAME }} --name "vnet-identity" &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Key Vault | $(az keyvault list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
           | Managed Identities | $(az identity list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[].name" -o tsv &>/dev/null && echo "✅ Deployed" || echo "❌ Missing") |
-          | Azure AD Domain Services | $([ "${{ env.DEPLOY_AADDS }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
+          | Azure AD Domain Services | $([ "${{ needs.verify-prerequisites.outputs.deploy_aadds }}" == "true" ] && (az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type "Microsoft.AAD/domainServices" --query "[].name" -o tsv &>/dev/null && echo "✅ Deploying" || echo "❓ In progress") || echo "⚪ Not Requested") |
           
-          ## 📚 GitHub Actions Syntax Reference
+          ## 📚 GitHub Actions Conditionals Reference
           
           ```yaml
-          # Job-level conditionals - NO expression syntax
-          if: env.VAR == 'true'
-          if: github.ref == 'refs/heads/main'
-          if: success() || always()
+          # ✅ CORRECT PATTERNS
           
-          # Step-level conditionals - MUST use expression syntax
-          if: ${{ steps.id.outputs.value == 'true' }}
-          if: ${{ contains(github.ref, 'refs/tags/') }}
+          # For job-level conditionals:
+          if: github.event_name == 'push'  # GitHub context directly
+          if: needs.job_name.outputs.variable == 'value'  # Job outputs
+          if: vars.WORKFLOW_VAR == 'true'  # GitHub Variables
           
-          # Shell script variables - MUST use expression syntax inside quotes
-          if [ "${{ env.VAR }}" == "true" ]
-          for item in ${{ steps.step_id.outputs.items }}; do
+          # For step-level conditionals:
+          if: ${{ github.event_name == 'push' }}  # GitHub context in expression syntax
+          if: ${{ steps.step_id.outputs.value == 'true' }}  # Step outputs in expression syntax
+          if: ${{ env.ENV_VAR == 'true' }}  # Env vars in expression syntax
+          
+          # For shell scripts:
+          if [ "${{ github.event_name }}" == "push" ]  # GitHub context
+          if [ "${{ env.ENV_VAR }}" == "true" ]  # Env vars
           ```
           
           ## 🔄 Next Steps
           
           1. Configure Azure AD Domain Services users and groups
-          2. Set up Key Vault access policies for workload identities
-          3. Connect application services to managed identities
+          2. Set up Key Vault access policies for managed identities
+          3. Connect applications to the identity services
           
-          Deployment by: GEP-V
-          Report generated: 2025-06-08 16:57:49 UTC
+          Deployment by: GEP-V  
+          Report generated: 2025-06-08 17:02:46 UTC
           EOF
