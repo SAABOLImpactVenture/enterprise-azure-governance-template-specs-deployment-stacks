@@ -3,7 +3,7 @@
   ============================================================
   Azure Policy Assignment with Tokenized Subscription ID
   ============================================================
-  Last Updated: 2025-06-06 19:39:13 UTC
+  Last Updated: 2025-06-09 20:07:16 UTC
   Current User: GEP-V
   
   PROMPT ENGINEERING NOTES:
@@ -25,6 +25,11 @@
   4. Specify the format needed for ARM deployment vs. Azure CLI
      - ARM templates use parameters and variables differently
      - CLI-based approaches use direct token replacement
+  
+  5. When using with Bicep modules:
+     - Ensure parameter names match between template specs and Bicep
+     - Check for reserved parameter names like 'description' which may conflict
+     - Use consistent naming conventions between all artifacts
   */
   
   "name": "enforce-tag-policy",
@@ -44,14 +49,14 @@
       }
     },
     
-    // Optional: description explaining the purpose of this policy assignment
+    // Note: If using with Bicep, rename to 'policyDescription' to avoid conflicts
     "description": "Enforces the presence of a CostCenter tag on all resources in the landing zone",
     
     // Optional: display name for the Azure portal
     "displayName": "Require Cost Center Tag on All Resources",
     
-    // Optional: enforcement mode (Default = 1 = enforced)
-    // Set to 0 for DeployIfNotExists policies to monitor before enforcing
-    "enforcementMode": 1
+    // Optional: enforcement mode (Default = 0 = enforced, 1 = DoNotEnforce)
+    // Note: This is opposite of what's in the comment - verify correct value
+    "enforcementMode": 0
   }
 }
