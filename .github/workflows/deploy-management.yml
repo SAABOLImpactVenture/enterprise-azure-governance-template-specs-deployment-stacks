@@ -1,102 +1,85 @@
-# ==========================================================================
-# Enterprise Azure Landing Zone - Management Resources Deployment
-# ==========================================================================
-# PROMPT ENGINEERING GUIDANCE:
-# This workflow deploys core management resources for an enterprise landing zone:
-# - Log Analytics workspace and solutions
-# - Azure Automation account
-# - Azure Monitor and Alerts
-# - Update Management solution
-# - Centralized diagnostic settings
-#
-# SECRETS CONFIGURATION:
-# - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
-# - AZURE_CLIENT_ID: App registration client ID with federated credentials
-# - MANAGEMENT_SUBSCRIPTION_ID: Dedicated subscription for management resources
-#
-# CUSTOMIZATION TIPS:
-# - Adjust retention periods based on your compliance requirements
-# - Configure alert thresholds appropriate for your workloads
-# - Consider data residency requirements when selecting region
-
 name: Deploy Management Resources
 
+# Prompt: Trigger the workflow manually, or on push to main branch
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-    paths:
-      - 'management/**'
-      - '.github/workflows/deploy-management.yml'
-  
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Target environment'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - nonproduction
-          - development
-      region:
-        description: 'Azure region for deployment'
-        required: true
-        default: 'eastus2'
-        type: string
-
-permissions:
-  id-token: write  # Required for OIDC federation
-  contents: read   # Required to read repo files
-
-# ==========================================================================
-# ENVIRONMENT VARIABLES - CRITICAL SECRET CONFIGURATION
-# ==========================================================================
-# PROMPT GUIDANCE:
-# - Management subscription should be separate from other workloads
-# - MANAGEMENT_SUBSCRIPTION_ID must exist as a repository secret
-# - The service principal needs Log Analytics Contributor and Monitoring Contributor
-# - Consider data residency requirements when selecting workspace region
-# ==========================================================================
-env:
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
-  RESOURCE_GROUP_NAME: rg-management
-  LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
-  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
 
 jobs:
-  verify-prerequisites:
-    name: Verify Prerequisites
+  deploy-management:
     runs-on: ubuntu-latest
-    steps:
-      - name: Check required secrets
-        run: |
-          # Verify tenant ID
-          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
-            echo "::error::AZURE_TENANT_ID secret is not set"
-            exit 1
-          fi
-          
-          # Verify client ID
-          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
-            echo "::error::AZURE_CLIENT_ID secret is not set"
-            exit 1
-          fi
-          
-          # Verify subscription ID
-          if [ -z "${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}" ]; then
-            echo "::error::MANAGEMENT_SUBSCRIPTION_ID secret is not set"
-            exit 1
-          fi
-          
-          echo "All required secrets are configured."
-          
-          # Determine subscription to use
-          SUB_ID="${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}"
-          echo "Using subscription ID: ${SUB_ID:0:8}..."
-          echo "SUBSCRIPTION_ID=$SUB_ID" >> $GITHUB_ENV
 
-  # Additional management-specific deployment jobs would follow...
+    # Prompt: Set environment variables for re-use and clarity
+    env:
+      RESOURCE_GROUP_NAME: rg-management
+      LOCATION: eastus2
+      ENVIRONMENT: production
+
+    steps:
+      # Prompt: Always begin with a checkout of the code to access Bicep templates
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Prompt: Authenticate with Azure using secure GitHub secrets
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
+
+      # Prompt: Ensure the management resource group exists in the desired location
+      - name: Create/Update Management Resource Group
+        run: |
+          az group create \
+            --name $RESOURCE_GROUP_NAME \
+            --location $LOCATION
+
+      # Prompt: Deploy Policy definitions and assignments using modular Bicep
+      - name: Deploy Policy Module
+        run: |
+          az deployment group create \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/policy.bicep \
+            --parameters environment=$ENVIRONMENT
+
+      # Prompt: Deploy Diagnostics settings and solutions for centralized monitoring
+      - name: Deploy Diagnostics Module
+        run: |
+          az deployment group create \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/diagnostics.bicep \
+            --parameters environment=$ENVIRONMENT
+
+      # Prompt: Deploy Role Assignments for RBAC and management access
+      - name: Deploy Role Assignments
+        run: |
+          az deployment group create \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/roleAssignment.bicep \
+            --parameters environment=$ENVIRONMENT
+
+      # Prompt: Optionally, deploy other core management modules as needed
+      # Example: Managed Identities
+      - name: Deploy Managed Identities
+        run: |
+          az deployment group create \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/managed-identities.bicep \
+            --parameters environment=$ENVIRONMENT
+
+      # Prompt: Add additional modules below as your management scope expands
+      # e.g., key vault, network, NSG, JIT access, etc.
+
+      # Prompt: Post-deployment validation to confirm resources are in place
+      - name: List Deployed Resources
+        run: |
+          az resource list --resource-group $RESOURCE_GROUP_NAME
+
+      # Prompt: (Optional) Output deployment summary or notify stakeholders
+      # - name: Notify team
+      #   uses: some-notification-action
+      #   with:
+      #     message: "Management resources deployed successfully to $RESOURCE_GROUP_NAME in $LOCATION."
