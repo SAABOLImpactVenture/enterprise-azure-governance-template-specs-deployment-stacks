@@ -1,33 +1,60 @@
+# ───────────────────────────────────────────────────────────────────────────────────
+# Azure Landing Zone Management Resources Deployment Workflow
+# ───────────────────────────────────────────────────────────────────────────────────
+# Current Date and Time (UTC): 2025-06-09 19:56:46
+# Current User's Login: GEP-V
+#
+# PROMPT ENGINEERING NOTES:
+# When creating deployment workflows with AI assistance, consider these best practices:
+#
+# 1. Be specific about authentication requirements:
+#    - Always specify needed permissions (id-token:write for OIDC)
+#    - Clarify which auth method you prefer (OIDC vs client secret)
+#
+# 2. Include detailed environment context:
+#    - Specify scope (subscription, resource group, management group)
+#    - Mention compliance or governance requirements
+#
+# 3. Provide expected resource output details:
+#    - "The policy should enforce tagging on all resources"
+#    - "Key vault should have these access policies"
+# 
+# 4. Request validation and error handling methods:
+#    - "Include validation steps before deployment"
+#    - "Add error handling for failed deployments"
+# ───────────────────────────────────────────────────────────────────────────────────
+
 name: Deploy Management Resources
 
-# Prompt: Trigger the workflow manually, or on push to main branch
+# Trigger the workflow manually, or on push to main branch
 on:
   workflow_dispatch:
   push:
     branches:
       - main
 
-# Add this permissions block - this is what's missing for OIDC authentication
+# Required permissions block for Azure OIDC authentication
 permissions:
-  id-token: write
-  contents: read
+  id-token: write  # Required for Azure OIDC authentication
+  contents: read   # Required to read repository contents
 
 jobs:
   deploy-management:
     runs-on: ubuntu-latest
 
-    # Prompt: Set environment variables for re-use and clarity
+    # Set environment variables for re-use and clarity
     env:
       RESOURCE_GROUP_NAME: rg-management
       LOCATION: eastus2
       ENVIRONMENT: production
 
     steps:
-      # Prompt: Always begin with a checkout of the code to access Bicep templates
+      # Always begin with a checkout of the code to access templates and parameters
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Prompt: Authenticate with Azure using secure GitHub secrets
+      # Authenticate with Azure using OIDC for enhanced security
+      # This requires setting up federated credentials in Azure AD
       - name: Azure Login
         uses: azure/login@v1
         with:
@@ -35,4 +62,41 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
 
-      # Rest of your existing steps remain unchanged
+      # Ensure the management resource group exists in the desired location
+      - name: Create/Update Management Resource Group
+        run: |
+          echo "Creating/updating resource group ${RESOURCE_GROUP_NAME}..."
+          az group create \
+            --name $RESOURCE_GROUP_NAME \
+            --location $LOCATION \
+            --tags Environment=$ENVIRONMENT
+          echo "Resource group ready: ${RESOURCE_GROUP_NAME}"
+
+      # Validate templates before deployment to catch issues early
+      - name: Validate Templates
+        run: |
+          echo "Validating policy template..."
+          az deployment group validate \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/policy.bicep \
+            --parameters ./landing-zone/parameters/policy-parameters.json
+          
+          echo "Validating diagnostics template..."
+          az deployment group validate \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/diagnostics.bicep \
+            --parameters ./landing-zone/parameters/landing-zone-parameters.json
+          
+          echo "Validating role assignment template..."
+          az deployment group validate \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/roleAssignment.bicep \
+            --parameters ./landing-zone/parameters/landing-zone-parameters.json
+          
+          echo "Validating managed identities template..."
+          az deployment group validate \
+            --resource-group $RESOURCE_GROUP_NAME \
+            --template-file ./landing-zone/modules/managed-identities.bicep \
+            --parameters ./landing-zone/parameters/landing-zone-parameters.json
+      
+      # Deploy Policy definitions and assignments using parameter
