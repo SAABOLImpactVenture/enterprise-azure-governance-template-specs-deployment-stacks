@@ -1,35 +1,51 @@
 #!/bin/bash
+# Direct Policy Assignment Script
+# Created: 2025-06-09 23:43:43
+# Author: GEP-V
 
-# Required parameters
+# This script uses the simplest possible approach to assign an Azure policy
+# with properly formatted parameters to avoid the "MissingPolicyParameter" error.
+
+# Set variables
 RESOURCE_GROUP="rg-management"
-LOCATION="eastus2"
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+POLICY_DEF_ID="1e30110a-5ceb-460c-a204-c1c3969c6d62"
+TAG_NAME="Environment"
+TAG_VALUE="Production"
 
-# Display banner
-echo "===================================================="
-echo "Azure Policy Deployment Script - GEP-V"
-echo "Date: 2025-06-09"
-echo "===================================================="
+echo "============================================================"
+echo "POLICY ASSIGNMENT - DIRECT APPROACH"
+echo "Created: 2025-06-09 23:43:43"
+echo "Author: GEP-V"
+echo "============================================================"
 
-# Create resource group if it doesn't exist
-echo "Creating resource group $RESOURCE_GROUP..."
-az group create --name $RESOURCE_GROUP --location $LOCATION --tags Environment=Production
+echo "Policy Definition ID: $POLICY_DEF_ID"
+echo "Scope: $SCOPE"
+echo "Tag Name: $TAG_NAME"
+echo "Tag Value: $TAG_VALUE"
+echo ""
 
-# Deploy policy with BOTH tagName AND tagValue parameters
-echo "Deploying tag policy with complete parameters..."
-az deployment group create \
-  --resource-group $RESOURCE_GROUP \
-  --name policy-assignment \
-  --parameters '{
-    "assignmentName": {"value": "enforce-tag-policy"},
-    "policyDefinitionId": {"value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"},
-    "policyDescription": {"value": "Enforces Environment tag on all resources"},
-    "displayName": {"value": "Require Environment Tag"},
-    "enforcementMode": {"value": "Default"},
-    "policyParameters": {"value": {
-      "tagName": {"value": "Environment"},
-      "tagValue": {"value": "Production"}
-    }}
-  }' \
-  --template-file ./landing-zone/modules/policy.bicep
+# Delete any existing policy assignment
+echo "Removing existing policy assignment (if any)..."
+az policy assignment delete --name enforce-tag-policy --scope $SCOPE || true
 
-echo "Policy deployment completed"
+# Create parameter string directly
+PARAMS="{\"tagName\":{\"value\":\"$TAG_NAME\"},\"tagValue\":{\"value\":\"$TAG_VALUE\"}}"
+echo "Using parameter string: $PARAMS"
+
+# Create policy assignment directly (without template or parameter files)
+echo "Creating policy assignment with direct parameters..."
+az policy assignment create \
+  --name "enforce-tag-policy" \
+  --display-name "Require $TAG_NAME Tag" \
+  --description "Enforces $TAG_NAME tag with value $TAG_VALUE on all resources" \
+  --policy $POLICY_DEF_ID \
+  --params "$PARAMS" \
+  --scope $SCOPE \
+  --enforcement-mode Default
+
+# Verify the assignment was created successfully
+echo ""
+echo "Verifying policy assignment..."
+az policy assignment show --name enforce-tag-policy --scope $SCOPE
