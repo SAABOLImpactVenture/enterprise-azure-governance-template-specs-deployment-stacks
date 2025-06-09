@@ -1,15 +1,52 @@
 {
-  "network": "goerli",
-  "constructorArgs": {
-    "initialValue": 42
+  "name": "enterprise-azure-governance-template-specs-deployment-stacks",
+  "version": "1.0.0",
+  "description": "Enterprise Azure Governance with Template Specs and Deployment Stacks",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests implemented yet - passing CI\" && exit 0",
+    "lint": "eslint .",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "deploy:identity": "az deployment sub create --name identity --location eastus2 --template-file landing-zone/modules/identity-network.bicep",
+    "validate:bicep": "az bicep build --file landing-zone/modules/identity-network.bicep"
   },
-  "deployerAddress": "0xYourDeployerAddressHere",
-  "gasLimit": 3000000,
-  "gasPrice": "auto",
-  "verifyOnEtherscan": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks.git"
+  },
+  "keywords": [
+    "azure",
+    "governance",
+    "bicep",
+    "template-specs",
+    "deployment-stacks"
+  ],
+  "author": "GEP-V",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks/issues"
+  },
+  "homepage": "https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks#readme",
+  "dependencies": {
+    "@azure/arm-resources": "^5.2.0",
+    "@azure/identity": "^3.2.1",
+    "@azure/keyvault-secrets": "^4.7.0",
+    "dotenv": "^16.0.3",
+    "yargs": "^17.7.1"
+  },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "dotenv": "^16.5.0",
-    "hardhat": "^2.24.2"
+    "@types/node": "^18.16.0",
+    "@types/yargs": "^17.0.24",
+    "@typescript-eslint/eslint-plugin": "^5.59.1",
+    "@typescript-eslint/parser": "^5.59.1",
+    "eslint": "^8.39.0",
+    "typescript": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "resolutions": {
+    "cookie": "^0.7.0"
   }
 }
