@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspaceName": {
+      "value": "log-analytics-management"
+    },
+    "workspaceRetention": {
+      "value": 30
+    },
+    "workspaceSku": {
+      "value": "PerGB2018"
+    },
+    "dataRetention": {
+      "value": 90
+    },
+    "environmentName": {
+      "value": "production"
+    },
+    "enableResourceDiagnostics": {
+      "value": true
+    },
+    "diagnosticsStorageAccountName": {
+      "value": "stmgmtdiag"
+    },
+    "diagnosticsStorageAccountSku": {
+      "value": {
+        "name": "Standard_LRS"
+      }
+    }
+  }
+}
