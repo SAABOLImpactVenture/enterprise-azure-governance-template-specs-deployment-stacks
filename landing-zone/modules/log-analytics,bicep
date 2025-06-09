@@ -1,0 +1,35 @@
+@description('Name of the Log Analytics workspace')
+param workspaceName string
+
+@description('Location for the workspace')
+param location string = resourceGroup().location
+
+@description('Retention period in days')
+param retentionInDays int = 30
+
+@description('Pricing tier: Free, PerNode, Premium, Standard, Standalone, Unlimited, CapacityReservation, PerGB2018')
+@allowed([
+  'Free'
+  'PerNode'
+  'Premium'
+  'Standard'
+  'Standalone'
+  'Unlimited'
+  'CapacityReservation'
+  'PerGB2018'
+])
+param sku string = 'PerGB2018'
+
+resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+  name: workspaceName
+  location: location
+  properties: {
+    sku: {
+      name: sku
+    }
+    retentionInDays: retentionInDays
+  }
+}
+
+output workspaceId string = workspace.id
+output workspaceName string = workspace.name
