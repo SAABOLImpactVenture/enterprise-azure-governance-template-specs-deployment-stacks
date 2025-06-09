@@ -1,8 +1,16 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 22:40:25
+# Last Updated: 2025-06-09 22:48:55
 # User: GEP-V
+#
+# This workflow deploys Azure landing zone components including:
+# - Management resource group
+# - Policy assignments with proper tag enforcement
+# - Log Analytics workspace for centralized monitoring
+# - Network components (optional)
+#
+# The workflow uses direct file references to avoid external dependencies.
 
 name: Deploy Azure Landing Zone
 
@@ -27,10 +35,16 @@ on:
           - diagnostics
           - networking
 
+# ==========================================================================
+# PERMISSIONS
+# ==========================================================================
 permissions:
-  id-token: write
-  contents: read
+  id-token: write  # Required for OIDC authentication
+  contents: read   # Required to read repo files
 
+# ==========================================================================
+# ENVIRONMENT VARIABLES
+# ==========================================================================
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -64,27 +78,84 @@ jobs:
       - name: Deploy Policy Assignment
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying policy assignment with parameter file..."
+          echo "Deploying policy assignment with complete parameters..."
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name policy-${{ github.run_id }} \
             --template-file ./landing-zone/modules/policy.bicep \
-            --parameters @./landing-zone/parameters/policy-parameters.json \
+            --parameters '{
+              "assignmentName": {"value": "enforce-tag-policy"},
+              "policyDefinitionId": {"value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"},
+              "policyDescription": {"value": "Enforces Environment tag on all resources"},
+              "displayName": {"value": "Require Environment Tag"},
+              "enforcementMode": {"value": "Default"},
+              "policyParameters": {"value": {
+                "tagName": {"value": "Environment"},
+                "tagValue": {"value": "Production"}
+              }},
+              "useIdentity": {"value": false}
+            }' \
             --verbose
 
       - name: Deploy Log Analytics Workspace
         id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying Log Analytics workspace..."
+          echo "Deploying Log Analytics workspace using local template..."
+          
+          # Create a temporary Log Analytics template file
+          cat > ./log-analytics.bicep << 'EOL'
+          @description('Name for the Log Analytics workspace')
+          param workspaceName string
+
+          @description('Location for the workspace')
+          param location string = resourceGroup().location
+
+          @description('Number of days to retain logs')
+          param retentionInDays int = 30
+
+          @description('SKU for the Log Analytics workspace')
+          @allowed([
+            'PerGB2018'
+            'Free'
+            'Standalone'
+            'PerNode'
+            'Standard'
+            'Premium'
+          ])
+          param sku string = 'PerGB2018'
+
+          resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+            name: workspaceName
+            location: location
+            properties: {
+              sku: {
+                name: sku
+              }
+              retentionInDays: retentionInDays
+              features: {
+                enableLogAccessUsingOnlyResourcePermissions: true
+              }
+            }
+            tags: {
+              Environment: 'Production'
+            }
+          }
+
+          output workspaceId string = logAnalyticsWorkspace.id
+          output workspaceName string = logAnalyticsWorkspace.name
+          output workspaceResourceGroup string = resourceGroup().name
+          EOL
+          
+          # Deploy using the local template
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name workspace-${{ github.run_id }} \
-            --template-file ./landing-zone/modules/log-analytics.bicep \
+            --template-file ./log-analytics.bicep \
             --parameters workspaceName=log-analytics-mgmt \
-                         location=${{ env.LOCATION }} \
-                         retentionInDays=30 \
-                         sku=PerGB2018 \
+                        location=${{ env.LOCATION }} \
+                        retentionInDays=30 \
+                        sku=PerGB2018 \
             --verbose
           
           # Get workspace ID for later use
@@ -92,7 +163,44 @@ jobs:
           echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
           echo "Log Analytics workspace ID: $WORKSPACE_ID"
 
+      - name: Create Management VNet
+        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'networking' || github.event.inputs.deploymentType == '' }}
+        run: |
+          echo "Creating management VNet..."
+          az network vnet create \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name vnet-management \
+            --address-prefix 10.0.0.0/16 \
+            --subnet-name subnet-management \
+            --subnet-prefix 10.0.0.0/24 \
+            --location ${{ env.LOCATION }} \
+            --tags Environment=Production
+
+      - name: Configure Diagnostics Settings
+        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
+        run: |
+          echo "Configuring diagnostics settings..."
+          
+          # Get the VNet ID
+          VNET_ID=$(az network vnet show --resource-group ${{ env.RESOURCE_GROUP_NAME }} --name vnet-management --query id -o tsv)
+          
+          if [ -n "$VNET_ID" ] && [ -n "$WORKSPACE_ID" ]; then
+            # Configure diagnostics settings for VNet
+            az monitor diagnostic-settings create \
+              --name "diag-to-log-analytics" \
+              --resource $VNET_ID \
+              --workspace $WORKSPACE_ID \
+              --logs '[{"category":"VMProtectionAlerts","enabled":true}]' \
+              --metrics '[{"category":"AllMetrics","enabled":true}]'
+            
+            echo "Diagnostics settings configured for VNet"
+          else
+            echo "Warning: Unable to configure diagnostics - missing VNet ID or Workspace ID"
+          fi
+
       - name: List Deployed Resources
         run: |
           echo "Listing all resources in the management resource group:"
           az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table
+          
+          echo "Deployment completed successfully at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"

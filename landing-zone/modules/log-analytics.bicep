@@ -1,7 +1,7 @@
 @description('Name for the Log Analytics workspace')
 param workspaceName string
 
-@description('Location for all resources')
+@description('Location for the workspace')
 param location string = resourceGroup().location
 
 @description('Number of days to retain logs')
@@ -37,3 +37,4 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
 
 output workspaceId string = logAnalyticsWorkspace.id
 output workspaceName string = logAnalyticsWorkspace.name
+output workspaceResourceGroup string = resourceGroup().name
