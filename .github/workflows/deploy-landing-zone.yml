@@ -1,7 +1,7 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 23:11:55 UTC
+# Last Updated: 2025-06-09 23:17:21 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
@@ -12,8 +12,8 @@
 # - Diagnostic settings for operational monitoring
 #
 # BEST PRACTICES IMPLEMENTED:
-# 1. Proper parameter handling for policy assignments
-# 2. Local template creation to avoid external dependencies
+# 1. Direct command usage to avoid external dependencies
+# 2. Proper parameter handling for policy assignments
 # 3. Resource ID capturing for cross-resource configuration
 # 4. Detailed logging and error handling
 # 5. Conditional deployment based on workflow inputs
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:11:55"
+  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:17:21"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
@@ -114,247 +114,85 @@ jobs:
       # ==========================================================================
       # POLICY ASSIGNMENT DEPLOYMENT
       # ==========================================================================
-      - name: Deploy Policy Using ARM Template
+      - name: Deploy Policy Using Direct Azure CLI
         id: deploy_policy
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying policy using ARM template..."
+          echo "Deploying policy using direct Azure CLI..."
           
-          # Create a clean policy template file without comments
-          cat > ./policy-clean.json << 'EOL'
-          {
-            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-            "contentVersion": "1.0.0.0",
-            "parameters": {
-              "policyName": {
-                "type": "string",
-                "defaultValue": "enforce-tag-policy",
-                "metadata": {
-                  "description": "Name of the policy assignment"
-                }
-              },
-              "tagName": {
-                "type": "string",
-                "defaultValue": "Environment",
-                "metadata": {
-                  "description": "Name of the tag to enforce"
-                }
-              },
-              "tagValue": {
-                "type": "string",
-                "defaultValue": "Production",
-                "metadata": {
-                  "description": "Value of the tag to enforce"
-                }
-              },
-              "subscriptionId": {
-                "type": "string",
-                "defaultValue": "[subscription().subscriptionId]",
-                "metadata": {
-                  "description": "Subscription ID for policy scope"
-                }
-              },
-              "resourceGroupName": {
-                "type": "string",
-                "defaultValue": "[resourceGroup().name]",
-                "metadata": {
-                  "description": "Resource group name for policy scope"
-                }
-              }
-            },
-            "resources": [
-              {
-                "type": "Microsoft.Authorization/policyAssignments",
-                "apiVersion": "2022-06-01",
-                "name": "[parameters('policyName')]",
-                "properties": {
-                  "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62",
-                  "parameters": {
-                    "tagName": {
-                      "value": "[parameters('tagName')]"
-                    },
-                    "tagValue": {
-                      "value": "[parameters('tagValue')]"
-                    }
-                  },
-                  "description": "[concat('Enforces the presence of a ', parameters('tagName'), ' tag with value ''', parameters('tagValue'), ''' on all resources')]",
-                  "displayName": "[concat('Require ', parameters('tagName'), ' Tag on All Resources')]",
-                  "enforcementMode": "Default"
-                }
-              }
-            ],
-            "outputs": {
-              "policyAssignmentId": {
-                "type": "string",
-                "value": "[resourceId('Microsoft.Authorization/policyAssignments', parameters('policyName'))]"
-              }
-            }
-          }
-          EOL
+          # Set scope for policy assignment
+          SUBSCRIPTION_ID=${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
+          SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}"
           
-          # Deploy policy assignment with retry logic
-          MAX_ATTEMPTS=${{ env.MAX_RETRY_ATTEMPTS }}
-          ATTEMPT=1
-          SUCCESS=false
+          # Remove any existing assignment with the same name
+          echo "Removing any existing policy assignment..."
+          az policy assignment delete --name enforce-tag-policy --scope $SCOPE 2>/dev/null || true
           
-          while [ $ATTEMPT -le $MAX_ATTEMPTS ] && [ "$SUCCESS" != "true" ]; do
-            echo "Attempt $ATTEMPT of $MAX_ATTEMPTS to deploy policy assignment..."
-            
-            POLICY_RESULT=$(az deployment group create \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --name policy-${{ github.run_id }}-$ATTEMPT \
-              --template-file ./policy-clean.json \
-              --parameters tagName=Environment \
-                           tagValue=Production \
-                           resourceGroupName=${{ env.RESOURCE_GROUP_NAME }} \
-              --verbose 2>&1)
-            
-            if [ $? -eq 0 ]; then
-              echo "Policy assignment deployed successfully"
-              POLICY_ID=$(echo "$POLICY_RESULT" | grep -o '"policyAssignmentId": *"[^"]*"' | cut -d'"' -f4)
-              echo "POLICY_ID=$POLICY_ID" >> $GITHUB_ENV
-              echo "Deployed policy with ID: $POLICY_ID"
-              SUCCESS=true
-              break
-            else
-              echo "ERROR: Policy deployment attempt $ATTEMPT failed"
-              echo "$POLICY_RESULT"
-              ATTEMPT=$((ATTEMPT + 1))
-              if [ $ATTEMPT -le $MAX_ATTEMPTS ]; then
-                echo "Waiting 30 seconds before retrying..."
-                sleep 30
-              fi
-            fi
-          done
+          # Create policy assignment directly with all required parameters
+          echo "Creating new policy assignment with complete parameters..."
+          POLICY_RESULT=$(az policy assignment create \
+            --name "enforce-tag-policy" \
+            --display-name "Require Environment Tag" \
+            --description "Enforces Environment tag on all resources" \
+            --policy "1e30110a-5ceb-460c-a204-c1c3969c6d62" \
+            --params "{\"tagName\":{\"value\":\"Environment\"},\"tagValue\":{\"value\":\"Production\"}}" \
+            --scope $SCOPE \
+            --enforcement-mode Default)
           
-          if [ "$SUCCESS" != "true" ]; then
-            echo "ERROR: All policy deployment attempts failed"
+          # Check for successful creation
+          if [ $? -eq 0 ]; then
+            echo "Policy assignment created successfully:"
+            echo "$POLICY_RESULT" | jq .
+            POLICY_ID=$(echo "$POLICY_RESULT" | jq -r '.id')
+            echo "POLICY_ID=$POLICY_ID" >> $GITHUB_ENV
+            echo "Deployed policy with ID: $POLICY_ID"
+          else
+            echo "Failed to create policy assignment"
             exit 1
           fi
 
       # ==========================================================================
       # LOG ANALYTICS WORKSPACE DEPLOYMENT
       # ==========================================================================
-      - name: Deploy Log Analytics Workspace
+      - name: Deploy Log Analytics Workspace Directly
         id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying Log Analytics workspace..."
+          echo "Deploying Log Analytics workspace directly..."
           
-          # Create a temporary Log Analytics template file
-          cat > ./log-analytics.json << 'EOL'
-          {
-            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-            "contentVersion": "1.0.0.0",
-            "parameters": {
-              "workspaceName": {
-                "type": "string",
-                "defaultValue": "log-analytics-mgmt"
-              },
-              "location": {
-                "type": "string",
-                "defaultValue": "[resourceGroup().location]"
-              },
-              "sku": {
-                "type": "string",
-                "defaultValue": "PerGB2018",
-                "allowedValues": [
-                  "PerGB2018",
-                  "Free",
-                  "Standalone",
-                  "PerNode",
-                  "Standard",
-                  "Premium"
-                ]
-              },
-              "retentionInDays": {
-                "type": "int",
-                "defaultValue": 30
-              }
-            },
-            "resources": [
-              {
-                "type": "Microsoft.OperationalInsights/workspaces",
-                "apiVersion": "2022-10-01",
-                "name": "[parameters('workspaceName')]",
-                "location": "[parameters('location')]",
-                "properties": {
-                  "sku": {
-                    "name": "[parameters('sku')]"
-                  },
-                  "retentionInDays": "[parameters('retentionInDays')]",
-                  "features": {
-                    "enableLogAccessUsingOnlyResourcePermissions": true
-                  }
-                },
-                "tags": {
-                  "Environment": "Production",
-                  "DeployedBy": "GEP-V",
-                  "DeployedAt": "2025-06-09 23:11:55"
-                }
-              }
-            ],
-            "outputs": {
-              "workspaceId": {
-                "type": "string",
-                "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
-              },
-              "workspaceName": {
-                "type": "string",
-                "value": "[parameters('workspaceName')]"
-              }
-            }
-          }
-          EOL
+          # Define workspace variables
+          WORKSPACE_NAME="log-analytics-mgmt"
+          SKU="PerGB2018"
+          RETENTION_DAYS=30
           
-          # Deploy Log Analytics workspace with retry logic
-          MAX_ATTEMPTS=${{ env.MAX_RETRY_ATTEMPTS }}
-          ATTEMPT=1
-          SUCCESS=false
+          # Check if workspace already exists
+          echo "Checking if workspace already exists..."
+          EXISTING_WORKSPACE=$(az monitor log-analytics workspace list \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --query "[?name=='$WORKSPACE_NAME'].id" -o tsv)
           
-          while [ $ATTEMPT -le $MAX_ATTEMPTS ] && [ "$SUCCESS" != "true" ]; do
-            echo "Attempt $ATTEMPT of $MAX_ATTEMPTS to deploy Log Analytics workspace..."
-            
-            WORKSPACE_RESULT=$(az deployment group create \
+          if [ -n "$EXISTING_WORKSPACE" ]; then
+            echo "Workspace already exists with ID: $EXISTING_WORKSPACE"
+            echo "WORKSPACE_ID=$EXISTING_WORKSPACE" >> $GITHUB_ENV
+          else
+            # Create workspace directly
+            echo "Creating Log Analytics workspace..."
+            WORKSPACE_RESULT=$(az monitor log-analytics workspace create \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --name workspace-${{ github.run_id }}-$ATTEMPT \
-              --template-file ./log-analytics.json \
-              --parameters workspaceName=log-analytics-mgmt \
-                           location=${{ env.LOCATION }} \
-                           retentionInDays=30 \
-                           sku=PerGB2018 \
-              --verbose 2>&1)
+              --workspace-name $WORKSPACE_NAME \
+              --location ${{ env.LOCATION }} \
+              --sku $SKU \
+              --retention-time $RETENTION_DAYS \
+              --tags Environment=Production DeployedBy=${{ env.DEPLOYMENT_USER }} DeployedAt="${{ env.DEPLOYMENT_TIMESTAMP }}")
             
             if [ $? -eq 0 ]; then
-              echo "Log Analytics workspace deployed successfully"
-              WORKSPACE_ID=$(echo "$WORKSPACE_RESULT" | grep -o '"workspaceId": *"[^"]*"' | cut -d'"' -f4)
+              # Get workspace ID
+              WORKSPACE_ID=$(echo "$WORKSPACE_RESULT" | jq -r '.id')
               echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
-              echo "Deployed workspace with ID: $WORKSPACE_ID"
-              SUCCESS=true
-              break
+              echo "Log Analytics workspace created with ID: $WORKSPACE_ID"
             else
-              echo "ERROR: Log Analytics deployment attempt $ATTEMPT failed"
+              echo "ERROR: Failed to create Log Analytics workspace"
               echo "$WORKSPACE_RESULT"
-              ATTEMPT=$((ATTEMPT + 1))
-              if [ $ATTEMPT -le $MAX_ATTEMPTS ]; then
-                echo "Waiting 30 seconds before retrying..."
-                sleep 30
-              fi
-            fi
-          done
-          
-          if [ "$SUCCESS" != "true" ]; then
-            echo "All Log Analytics deployment attempts failed, attempting direct retrieval..."
-            WORKSPACE_ID=$(az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --resource-type Microsoft.OperationalInsights/workspaces \
-              --query "[0].id" -o tsv)
-            
-            if [ -n "$WORKSPACE_ID" ]; then
-              echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
-              echo "Retrieved workspace ID: $WORKSPACE_ID"
-              SUCCESS=true
-            else
-              echo "ERROR: Unable to deploy or find Log Analytics workspace"
               exit 1
             fi
           fi
@@ -385,14 +223,20 @@ jobs:
               --location ${{ env.LOCATION }} \
               --tags Environment=Production DeployedBy=${{ env.DEPLOYMENT_USER }} DeployedAt="${{ env.DEPLOYMENT_TIMESTAMP }}")
             
-            # Store VNet ID for diagnostics configuration
-            VNET_ID=$(az network vnet show \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --name vnet-management \
-              --query id -o tsv)
-            
-            echo "VNET_ID=$VNET_ID" >> $GITHUB_ENV
-            echo "VNet created with ID: $VNET_ID"
+            if [ $? -eq 0 ]; then
+              # Store VNet ID for diagnostics configuration
+              VNET_ID=$(az network vnet show \
+                --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+                --name vnet-management \
+                --query id -o tsv)
+              
+              echo "VNET_ID=$VNET_ID" >> $GITHUB_ENV
+              echo "VNet created with ID: $VNET_ID"
+            else
+              echo "ERROR: Failed to create VNet"
+              echo "$VNET_RESULT"
+              exit 1
+            fi
           fi
           
           # Check if services subnet exists, add if missing
@@ -405,13 +249,18 @@ jobs:
             echo "Services subnet already exists with ID: $EXISTING_SUBNET"
           else
             echo "Adding management services subnet..."
-            az network vnet subnet create \
+            SUBNET_RESULT=$(az network vnet subnet create \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
               --vnet-name vnet-management \
               --name subnet-services \
-              --address-prefix 10.0.1.0/24
+              --address-prefix 10.0.1.0/24)
             
-            echo "Services subnet created"
+            if [ $? -eq 0 ]; then
+              echo "Services subnet created successfully"
+            else
+              echo "WARNING: Failed to create services subnet"
+              echo "$SUBNET_RESULT"
+            fi
           fi
           
           echo "VNet configuration completed"
@@ -428,7 +277,7 @@ jobs:
           # Check if both required resources exist
           if [ -n "$VNET_ID" ] && [ -n "$WORKSPACE_ID" ]; then
             # Check if diagnostics already configured
-            EXISTING_DIAG=$(az monitor diagnostic-settings list --resource "$VNET_ID" --query "[?name=='diag-to-log-analytics'].id" -o tsv)
+            EXISTING_DIAG=$(az monitor diagnostic-settings list --resource "$VNET_ID" --query "[?name=='diag-to-log-analytics'].id" -o tsv 2>/dev/null || echo "")
             
             if [ -n "$EXISTING_DIAG" ]; then
               echo "Diagnostics settings already exist for VNet"
@@ -446,7 +295,7 @@ jobs:
                 echo "$DIAG_RESULT" | jq .
               else
                 echo "WARNING: Failed to configure diagnostics settings"
-                echo "$DIAG_RESULT" | jq .
+                echo "$DIAG_RESULT"
               fi
             fi
           else
@@ -515,6 +364,7 @@ jobs:
           fi
           
           echo "All validation checks passed!"
+          echo "status=success" >> $GITHUB_OUTPUT
 
       # ==========================================================================
       # DEPLOYMENT SUMMARY
@@ -597,9 +447,6 @@ jobs:
           [View Run Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
           EOL
           
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "Summary files created"
-          
           # Print text summary
           echo "===================================================="
           echo "DEPLOYMENT SUMMARY: ${{ env.DEPLOYMENT_TIMESTAMP }}"
@@ -631,7 +478,7 @@ jobs:
           echo "===================================================="
 
       # ==========================================================================
-      # ARTIFACT UPLOADS - UPDATED TO V4
+      # ARTIFACT UPLOADS
       # ==========================================================================
       - name: Upload Deployment Artifacts
         if: always()
@@ -641,8 +488,6 @@ jobs:
           path: |
             ./deployment-summary.json
             ./deployment-summary.md
-            ./policy-clean.json
-            ./log-analytics.json
           retention-days: 90
 
   # ==========================================================================
