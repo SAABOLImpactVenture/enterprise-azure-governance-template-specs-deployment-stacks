@@ -1,7 +1,7 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 23:08:58 UTC
+# Last Updated: 2025-06-09 23:11:55 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:08:58"
+  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:11:55"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
@@ -290,7 +290,7 @@ jobs:
                 "tags": {
                   "Environment": "Production",
                   "DeployedBy": "GEP-V",
-                  "DeployedAt": "2025-06-09 23:08:58"
+                  "DeployedAt": "2025-06-09 23:11:55"
                 }
               }
             ],
@@ -631,11 +631,11 @@ jobs:
           echo "===================================================="
 
       # ==========================================================================
-      # ARTIFACT UPLOADS
+      # ARTIFACT UPLOADS - UPDATED TO V4
       # ==========================================================================
       - name: Upload Deployment Artifacts
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: deployment-artifacts-${{ github.run_id }}
           path: |
@@ -664,7 +664,7 @@ jobs:
           fi
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: deployment-artifacts-${{ github.run_id }}
           path: ./artifacts
