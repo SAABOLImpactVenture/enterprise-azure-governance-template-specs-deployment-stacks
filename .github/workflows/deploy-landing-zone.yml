@@ -1,7 +1,7 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 23:28:17 UTC
+# Last Updated: 2025-06-09 23:33:20 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:28:17"
+  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:33:20"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
