@@ -1,16 +1,35 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 22:48:55
-# User: GEP-V
+# PROMPT ENGINEERING GUIDANCE:
+# Last Updated: 2025-06-09 23:00:35
+# Current User: GEP-V
 #
-# This workflow deploys Azure landing zone components including:
-# - Management resource group
-# - Policy assignments with proper tag enforcement
-# - Log Analytics workspace for centralized monitoring
-# - Network components (optional)
+# This workflow handles the deployment of Azure landing zone components:
+# - Uses direct commands where necessary to avoid template parameter issues
+# - Creates local templates inline to avoid external dependencies
+# - Implements proper error handling with verbose output
+# - Provides conditional deployment of components
 #
-# The workflow uses direct file references to avoid external dependencies.
+# CRITICAL CONSIDERATIONS:
+# 1. POLICY PARAMETER HANDLING:
+#    - Built-in policy 1e30110a-5ceb-460c-a204-c1c3969c6d62 requires BOTH tagName and tagValue
+#    - ARM/Bicep parameter passing can be problematic with nested objects
+#    - Direct az policy assignment create command bypasses these issues
+#
+# 2. EXTERNAL DEPENDENCIES:
+#    - Avoid external URL dependencies (like GitHub raw content)
+#    - Create templates inline when needed or include in repository
+#
+# 3. RESOURCE SEQUENCE:
+#    - Create resource groups before deploying resources
+#    - Get IDs of created resources for use in subsequent steps
+#    - Use proper dependencies between steps
+#
+# REQUIRED SECRETS:
+# - AZURE_TENANT_ID: Your Azure AD tenant ID
+# - AZURE_CLIENT_ID: App registration client ID with proper permissions
+# - MANAGEMENT_SUBSCRIPTION_ID: Subscription for management resources
 
 name: Deploy Azure Landing Zone
 
@@ -37,6 +56,7 @@ on:
 
 # ==========================================================================
 # PERMISSIONS
+# PROMPT GUIDANCE: Keep permissions minimal but sufficient
 # ==========================================================================
 permissions:
   id-token: write  # Required for OIDC authentication
@@ -44,6 +64,7 @@ permissions:
 
 # ==========================================================================
 # ENVIRONMENT VARIABLES
+# PROMPT GUIDANCE: Define commonly used values as environment variables
 # ==========================================================================
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -51,12 +72,23 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
+  CURRENT_DATE: "2025-06-09"
 
 jobs:
+  # ==========================================================================
+  # DEPLOYMENT JOB
+  # PROMPT GUIDANCE: 
+  # - Use a single job for simpler workflows
+  # - Split into multiple jobs for complex dependencies
+  # ==========================================================================
   deploy-management:
     name: Deploy Management Resources
     runs-on: ubuntu-latest
     steps:
+      # ==========================================================================
+      # SETUP AND AUTHENTICATION
+      # PROMPT GUIDANCE: Always include proper Azure authentication
+      # ==========================================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -74,34 +106,61 @@ jobs:
             --name ${{ env.RESOURCE_GROUP_NAME }} \
             --location ${{ env.LOCATION }} \
             --tags Environment=Production
+          
+          echo "Resource group creation completed"
 
-      - name: Deploy Policy Assignment
+      # ==========================================================================
+      # POLICY DEPLOYMENT
+      # PROMPT GUIDANCE: 
+      # - Use direct Azure CLI commands for policy assignment to avoid parameter issues
+      # - Ensure both tagName and tagValue parameters are properly specified
+      # ==========================================================================
+      - name: Deploy Policy Using Direct Azure CLI
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
+        id: deploy_policy
         run: |
-          echo "Deploying policy assignment with complete parameters..."
-          az deployment group create \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --name policy-${{ github.run_id }} \
-            --template-file ./landing-zone/modules/policy.bicep \
-            --parameters '{
-              "assignmentName": {"value": "enforce-tag-policy"},
-              "policyDefinitionId": {"value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"},
-              "policyDescription": {"value": "Enforces Environment tag on all resources"},
-              "displayName": {"value": "Require Environment Tag"},
-              "enforcementMode": {"value": "Default"},
-              "policyParameters": {"value": {
-                "tagName": {"value": "Environment"},
-                "tagValue": {"value": "Production"}
-              }},
-              "useIdentity": {"value": false}
-            }' \
-            --verbose
+          echo "Creating policy assignment directly via Azure CLI..."
+          
+          # Set scope for policy assignment
+          SUBSCRIPTION_ID=${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
+          SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}"
+          
+          # Remove any existing assignment with the same name
+          echo "Removing any existing policy assignment..."
+          az policy assignment delete --name enforce-tag-policy --scope $SCOPE 2>/dev/null || true
+          
+          # Create policy assignment directly with all required parameters
+          echo "Creating new policy assignment with complete parameters..."
+          POLICY_RESULT=$(az policy assignment create \
+            --name "enforce-tag-policy" \
+            --display-name "Require Environment Tag" \
+            --description "Enforces Environment tag on all resources" \
+            --policy "1e30110a-5ceb-460c-a204-c1c3969c6d62" \
+            --params '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' \
+            --scope $SCOPE \
+            --enforcement-mode Default)
+          
+          # Check for successful creation
+          if [ $? -eq 0 ]; then
+            echo "Policy assignment created successfully:"
+            echo "$POLICY_RESULT" | jq .
+            echo "POLICY_ID=$(echo "$POLICY_RESULT" | jq -r .id)" >> $GITHUB_ENV
+          else
+            echo "Failed to create policy assignment"
+            exit 1
+          fi
 
-      - name: Deploy Log Analytics Workspace
+      # ==========================================================================
+      # LOG ANALYTICS WORKSPACE
+      # PROMPT GUIDANCE:
+      # - Create template inline to avoid external dependencies
+      # - Store resource ID for later use in diagnostics
+      # ==========================================================================
+      - name: Deploy Log Analytics Workspace Using Inline Template
         id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying Log Analytics workspace using local template..."
+          echo "Deploying Log Analytics workspace using inline template..."
           
           # Create a temporary Log Analytics template file
           cat > ./log-analytics.bicep << 'EOL'
@@ -148,7 +207,8 @@ jobs:
           EOL
           
           # Deploy using the local template
-          az deployment group create \
+          echo "Deploying Log Analytics workspace..."
+          WORKSPACE_RESULT=$(az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name workspace-${{ github.run_id }} \
             --template-file ./log-analytics.bicep \
@@ -156,51 +216,100 @@ jobs:
                         location=${{ env.LOCATION }} \
                         retentionInDays=30 \
                         sku=PerGB2018 \
-            --verbose
+            --verbose)
           
-          # Get workspace ID for later use
-          WORKSPACE_ID=$(az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type Microsoft.OperationalInsights/workspaces --query "[0].id" -o tsv)
-          echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
-          echo "Log Analytics workspace ID: $WORKSPACE_ID"
+          # Check for successful deployment
+          if [ $? -eq 0 ]; then
+            # Extract workspace ID from deployment outputs
+            WORKSPACE_ID=$(echo "$WORKSPACE_RESULT" | jq -r '.properties.outputs.workspaceId.value')
+            echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
+            echo "Log Analytics workspace deployed with ID: $WORKSPACE_ID"
+          else
+            echo "Log Analytics workspace deployment failed"
+            echo "$WORKSPACE_RESULT" | jq .
+            
+            # Fall back to getting workspace ID if it was created despite error
+            echo "Attempting to retrieve workspace ID from Azure resources..."
+            WORKSPACE_ID=$(az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+              --resource-type Microsoft.OperationalInsights/workspaces \
+              --query "[0].id" -o tsv)
+            
+            if [ -n "$WORKSPACE_ID" ]; then
+              echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
+              echo "Retrieved workspace ID: $WORKSPACE_ID"
+            else
+              echo "Unable to retrieve workspace ID"
+            fi
+          fi
 
+      # ==========================================================================
+      # NETWORKING DEPLOYMENT
+      # PROMPT GUIDANCE: Use Azure CLI for straightforward resource creation
+      # ==========================================================================
       - name: Create Management VNet
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'networking' || github.event.inputs.deploymentType == '' }}
         run: |
           echo "Creating management VNet..."
-          az network vnet create \
+          VNET_RESULT=$(az network vnet create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name vnet-management \
             --address-prefix 10.0.0.0/16 \
             --subnet-name subnet-management \
             --subnet-prefix 10.0.0.0/24 \
             --location ${{ env.LOCATION }} \
-            --tags Environment=Production
+            --tags Environment=Production)
+          
+          # Store VNet ID for diagnostics configuration
+          VNET_ID=$(echo "$VNET_RESULT" | jq -r '.newVNet.id')
+          echo "VNET_ID=$VNET_ID" >> $GITHUB_ENV
+          echo "VNet created with ID: $VNET_ID"
 
+      # ==========================================================================
+      # DIAGNOSTICS CONFIGURATION
+      # PROMPT GUIDANCE: Configure diagnostics only if resources exist
+      # ==========================================================================
       - name: Configure Diagnostics Settings
-        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
+        if: ${{ (github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '') && env.WORKSPACE_ID != '' && env.VNET_ID != '' }}
         run: |
           echo "Configuring diagnostics settings..."
           
-          # Get the VNet ID
-          VNET_ID=$(az network vnet show --resource-group ${{ env.RESOURCE_GROUP_NAME }} --name vnet-management --query id -o tsv)
-          
+          # Check if both resources exist
           if [ -n "$VNET_ID" ] && [ -n "$WORKSPACE_ID" ]; then
             # Configure diagnostics settings for VNet
             az monitor diagnostic-settings create \
               --name "diag-to-log-analytics" \
-              --resource $VNET_ID \
-              --workspace $WORKSPACE_ID \
+              --resource "$VNET_ID" \
+              --workspace "$WORKSPACE_ID" \
               --logs '[{"category":"VMProtectionAlerts","enabled":true}]' \
               --metrics '[{"category":"AllMetrics","enabled":true}]'
             
             echo "Diagnostics settings configured for VNet"
           else
             echo "Warning: Unable to configure diagnostics - missing VNet ID or Workspace ID"
+            echo "VNet ID: $VNET_ID"
+            echo "Workspace ID: $WORKSPACE_ID"
           fi
 
+      # ==========================================================================
+      # DEPLOYMENT SUMMARY
+      # PROMPT GUIDANCE: Always provide deployment summary for verification
+      # ==========================================================================
       - name: List Deployed Resources
         run: |
-          echo "Listing all resources in the management resource group:"
+          echo "===================================================="
+          echo "DEPLOYMENT SUMMARY: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "===================================================="
+          echo "Resource Group: ${{ env.RESOURCE_GROUP_NAME }}"
+          echo "Location: ${{ env.LOCATION }}"
+          echo ""
+          
+          echo "Resources deployed:"
           az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table
           
+          echo ""
+          echo "Policy Assignments:"
+          az policy assignment list --scope "/subscriptions/${{ env.MANAGEMENT_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}" -o table
+          
+          echo ""
           echo "Deployment completed successfully at $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "===================================================="
