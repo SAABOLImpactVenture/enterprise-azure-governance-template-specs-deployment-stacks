@@ -1,7 +1,7 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 23:17:21 UTC
+# Last Updated: 2025-06-09 23:28:17 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
@@ -12,11 +12,11 @@
 # - Diagnostic settings for operational monitoring
 #
 # BEST PRACTICES IMPLEMENTED:
-# 1. Direct command usage to avoid external dependencies
-# 2. Proper parameter handling for policy assignments
-# 3. Resource ID capturing for cross-resource configuration
-# 4. Detailed logging and error handling
-# 5. Conditional deployment based on workflow inputs
+# 1. Resource provider registration before deployment
+# 2. Parameter file approach for policy assignments
+# 3. Direct command usage to avoid external dependencies
+# 4. Resource ID capturing for cross-resource configuration
+# 5. Detailed logging and error handling
 
 name: Deploy Azure Landing Zone
 
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:17:21"
+  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:28:17"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
@@ -92,6 +92,46 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
 
+      # ==========================================================================
+      # RESOURCE PROVIDER REGISTRATION
+      # ==========================================================================
+      - name: Register Required Azure Resource Providers
+        id: register_providers
+        run: |
+          echo "Registering required Azure resource providers..."
+          
+          # List of providers required for the landing zone
+          PROVIDERS=(
+            "Microsoft.Insights"
+            "Microsoft.OperationalInsights"
+            "Microsoft.Network"
+            "Microsoft.Storage"
+            "Microsoft.Compute"
+            "Microsoft.Authorization"
+            "Microsoft.Resources"
+            "Microsoft.PolicyInsights"
+          )
+          
+          # Register each provider
+          for PROVIDER in "${PROVIDERS[@]}"
+          do
+            echo "Registering provider: $PROVIDER"
+            az provider register --namespace $PROVIDER
+          done
+          
+          # Check Microsoft.Insights specifically (since that's our issue)
+          echo "Checking Microsoft.Insights registration status..."
+          INSIGHTS_STATUS=$(az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv)
+          echo "Microsoft.Insights status: $INSIGHTS_STATUS"
+          
+          if [ "$INSIGHTS_STATUS" != "Registered" ]; then
+            echo "Microsoft.Insights is not yet fully registered. This is normal and will complete in the background."
+            echo "We'll proceed with the deployment, but diagnostics configuration might need to be run again later."
+          fi
+          
+          echo "providersRegistered=true" >> $GITHUB_OUTPUT
+          echo "insightsStatus=$INSIGHTS_STATUS" >> $GITHUB_ENV
+
       - name: Create Management Resource Group
         id: create_rg
         run: |
@@ -112,30 +152,47 @@ jobs:
           fi
 
       # ==========================================================================
-      # POLICY ASSIGNMENT DEPLOYMENT
+      # POLICY ASSIGNMENT DEPLOYMENT - USING PARAMETER FILE
       # ==========================================================================
-      - name: Deploy Policy Using Direct Azure CLI
+      - name: Deploy Policy Using Parameter File
         id: deploy_policy
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying policy using direct Azure CLI..."
+          echo "Deploying policy using parameter file approach..."
           
           # Set scope for policy assignment
           SUBSCRIPTION_ID=${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
           SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}"
+          POLICY_ID="1e30110a-5ceb-460c-a204-c1c3969c6d62"
           
           # Remove any existing assignment with the same name
           echo "Removing any existing policy assignment..."
           az policy assignment delete --name enforce-tag-policy --scope $SCOPE 2>/dev/null || true
           
-          # Create policy assignment directly with all required parameters
-          echo "Creating new policy assignment with complete parameters..."
+          # Create a parameters file with proper structure
+          echo "Creating policy parameters file..."
+          cat > policy-parameters.json << EOF
+          {
+            "tagName": {
+              "value": "Environment"
+            },
+            "tagValue": {
+              "value": "Production"
+            }
+          }
+          EOF
+          
+          echo "Parameters file content:"
+          cat policy-parameters.json
+          
+          # Create policy assignment using parameters file
+          echo "Creating new policy assignment with parameters file..."
           POLICY_RESULT=$(az policy assignment create \
             --name "enforce-tag-policy" \
             --display-name "Require Environment Tag" \
             --description "Enforces Environment tag on all resources" \
-            --policy "1e30110a-5ceb-460c-a204-c1c3969c6d62" \
-            --params "{\"tagName\":{\"value\":\"Environment\"},\"tagValue\":{\"value\":\"Production\"}}" \
+            --policy $POLICY_ID \
+            --params @policy-parameters.json \
             --scope $SCOPE \
             --enforcement-mode Default)
           
@@ -147,53 +204,251 @@ jobs:
             echo "POLICY_ID=$POLICY_ID" >> $GITHUB_ENV
             echo "Deployed policy with ID: $POLICY_ID"
           else
-            echo "Failed to create policy assignment"
-            exit 1
+            echo "Failed to create policy assignment with parameter file"
+            echo "$POLICY_RESULT"
+            
+            # Try alternative approach with simpler parameter format
+            echo "Trying alternative parameter approach..."
+            cat > simple-params.json << EOF
+            {"tagName":"Environment","tagValue":"Production"}
+            EOF
+            
+            echo "Simple parameters content:"
+            cat simple-params.json
+            
+            echo "Creating policy with simple parameters..."
+            POLICY_RESULT=$(az policy assignment create \
+              --name "enforce-tag-policy" \
+              --display-name "Require Environment Tag" \
+              --description "Enforces Environment tag on all resources" \
+              --policy $POLICY_ID \
+              --params @simple-params.json \
+              --scope $SCOPE \
+              --enforcement-mode Default)
+            
+            if [ $? -eq 0 ]; then
+              echo "Policy assignment created successfully with simple parameters:"
+              echo "$POLICY_RESULT" | jq .
+              POLICY_ID=$(echo "$POLICY_RESULT" | jq -r '.id')
+              echo "POLICY_ID=$POLICY_ID" >> $GITHUB_ENV
+            else
+              echo "Both parameter approaches failed. Trying direct inline approach..."
+              
+              # Final approach - direct inline JSON string
+              echo "Creating policy with direct inline parameters..."
+              POLICY_RESULT=$(az policy assignment create \
+                --name "enforce-tag-policy" \
+                --display-name "Require Environment Tag" \
+                --description "Enforces Environment tag on all resources" \
+                --policy $POLICY_ID \
+                --params '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' \
+                --scope $SCOPE \
+                --enforcement-mode Default)
+              
+              if [ $? -eq 0 ]; then
+                echo "Policy assignment created successfully with inline parameters:"
+                echo "$POLICY_RESULT" | jq .
+                POLICY_ID=$(echo "$POLICY_RESULT" | jq -r '.id')
+                echo "POLICY_ID=$POLICY_ID" >> $GITHUB_ENV
+              else
+                echo "All parameter approaches failed"
+                echo "$POLICY_RESULT"
+                exit 1
+              fi
+            fi
           fi
 
       # ==========================================================================
-      # LOG ANALYTICS WORKSPACE DEPLOYMENT
+      # LOG ANALYTICS WORKSPACE DEPLOYMENT - DIRECTLY USING ARM TEMPLATE INLINE
       # ==========================================================================
-      - name: Deploy Log Analytics Workspace Directly
+      - name: Deploy Log Analytics Workspace Using ARM Template Inline
         id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying Log Analytics workspace directly..."
+          echo "Deploying Log Analytics workspace using inline ARM template..."
           
-          # Define workspace variables
-          WORKSPACE_NAME="log-analytics-mgmt"
-          SKU="PerGB2018"
-          RETENTION_DAYS=30
+          # Create ARM template file inline (no external dependencies)
+          cat > ./log-analytics-template.json << 'EOF'
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "workspaceName": {
+                "type": "string",
+                "metadata": {
+                  "description": "Name of the Log Analytics workspace"
+                }
+              },
+              "location": {
+                "type": "string",
+                "defaultValue": "[resourceGroup().location]",
+                "metadata": {
+                  "description": "Location for the workspace"
+                }
+              },
+              "sku": {
+                "type": "string",
+                "defaultValue": "PerGB2018",
+                "allowedValues": ["Free", "PerGB2018", "PerNode", "Premium", "Standalone", "Standard"],
+                "metadata": {
+                  "description": "Pricing tier: PerGB2018 or legacy tiers"
+                }
+              },
+              "retentionInDays": {
+                "type": "int",
+                "defaultValue": 30,
+                "minValue": 7,
+                "maxValue": 730,
+                "metadata": {
+                  "description": "Number of days to retain data"
+                }
+              },
+              "deploymentUser": {
+                "type": "string",
+                "metadata": {
+                  "description": "User deploying the resource"
+                }
+              },
+              "deploymentTimestamp": {
+                "type": "string",
+                "metadata": {
+                  "description": "Timestamp of deployment"
+                }
+              }
+            },
+            "resources": [
+              {
+                "type": "Microsoft.OperationalInsights/workspaces",
+                "apiVersion": "2022-10-01",
+                "name": "[parameters('workspaceName')]",
+                "location": "[parameters('location')]",
+                "properties": {
+                  "sku": {
+                    "name": "[parameters('sku')]"
+                  },
+                  "retentionInDays": "[parameters('retentionInDays')]",
+                  "features": {
+                    "enableLogAccessUsingOnlyResourcePermissions": true
+                  },
+                  "publicNetworkAccessForIngestion": "Enabled",
+                  "publicNetworkAccessForQuery": "Enabled"
+                },
+                "tags": {
+                  "Environment": "Production",
+                  "DeployedBy": "[parameters('deploymentUser')]",
+                  "DeployedAt": "[parameters('deploymentTimestamp')]"
+                }
+              }
+            ],
+            "outputs": {
+              "workspaceId": {
+                "type": "string",
+                "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+              }
+            }
+          }
+          EOF
           
           # Check if workspace already exists
           echo "Checking if workspace already exists..."
-          EXISTING_WORKSPACE=$(az monitor log-analytics workspace list \
+          WORKSPACE_NAME="log-analytics-mgmt"
+          EXISTING_WORKSPACE=$(az resource list \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --resource-type "Microsoft.OperationalInsights/workspaces" \
             --query "[?name=='$WORKSPACE_NAME'].id" -o tsv)
           
           if [ -n "$EXISTING_WORKSPACE" ]; then
             echo "Workspace already exists with ID: $EXISTING_WORKSPACE"
             echo "WORKSPACE_ID=$EXISTING_WORKSPACE" >> $GITHUB_ENV
+            echo "status=exists" >> $GITHUB_OUTPUT
           else
-            # Create workspace directly
-            echo "Creating Log Analytics workspace..."
-            WORKSPACE_RESULT=$(az monitor log-analytics workspace create \
-              --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --workspace-name $WORKSPACE_NAME \
-              --location ${{ env.LOCATION }} \
-              --sku $SKU \
-              --retention-time $RETENTION_DAYS \
-              --tags Environment=Production DeployedBy=${{ env.DEPLOYMENT_USER }} DeployedAt="${{ env.DEPLOYMENT_TIMESTAMP }}")
+            # Deploy using ARM template with retry logic
+            MAX_ATTEMPTS=${{ env.MAX_RETRY_ATTEMPTS }}
+            ATTEMPT=1
+            SUCCESS=false
             
-            if [ $? -eq 0 ]; then
-              # Get workspace ID
-              WORKSPACE_ID=$(echo "$WORKSPACE_RESULT" | jq -r '.id')
-              echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
-              echo "Log Analytics workspace created with ID: $WORKSPACE_ID"
-            else
-              echo "ERROR: Failed to create Log Analytics workspace"
-              echo "$WORKSPACE_RESULT"
-              exit 1
+            while [ $ATTEMPT -le $MAX_ATTEMPTS ] && [ "$SUCCESS" != "true" ]; do
+              echo "Attempt $ATTEMPT of $MAX_ATTEMPTS to deploy Log Analytics workspace..."
+              
+              # Execute ARM template deployment
+              DEPLOYMENT_RESULT=$(az deployment group create \
+                --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+                --name "log-analytics-${{ github.run_id }}-$ATTEMPT" \
+                --template-file ./log-analytics-template.json \
+                --parameters \
+                    workspaceName="log-analytics-mgmt" \
+                    location="${{ env.LOCATION }}" \
+                    sku="PerGB2018" \
+                    retentionInDays=30 \
+                    deploymentUser="${{ env.DEPLOYMENT_USER }}" \
+                    deploymentTimestamp="${{ env.DEPLOYMENT_TIMESTAMP }}" \
+                --verbose 2>&1)
+              
+              DEPLOYMENT_EXIT_CODE=$?
+              
+              # Check deployment result
+              if [ $DEPLOYMENT_EXIT_CODE -eq 0 ]; then
+                echo "Log Analytics workspace deployed successfully"
+                # Extract workspace ID from deployment output
+                WORKSPACE_ID=$(echo "$DEPLOYMENT_RESULT" | grep -o '"workspaceId": *"[^"]*"' | cut -d'"' -f4)
+                
+                if [ -n "$WORKSPACE_ID" ]; then
+                  echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
+                  echo "Workspace ID: $WORKSPACE_ID"
+                  SUCCESS=true
+                  echo "status=created" >> $GITHUB_OUTPUT
+                  break
+                else
+                  echo "WARNING: Deployment succeeded but couldn't extract workspace ID"
+                  WORKSPACE_ID=$(az resource list \
+                    --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+                    --resource-type "Microsoft.OperationalInsights/workspaces" \
+                    --query "[?name=='log-analytics-mgmt'].id" -o tsv)
+                  
+                  if [ -n "$WORKSPACE_ID" ]; then
+                    echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
+                    echo "Retrieved workspace ID: $WORKSPACE_ID"
+                    SUCCESS=true
+                    echo "status=created" >> $GITHUB_OUTPUT
+                    break
+                  fi
+                fi
+              else
+                echo "Deployment attempt $ATTEMPT failed"
+                echo "$DEPLOYMENT_RESULT"
+                ATTEMPT=$((ATTEMPT + 1))
+                
+                if [ $ATTEMPT -le $MAX_ATTEMPTS ]; then
+                  echo "Waiting 30 seconds before retry..."
+                  sleep 30
+                fi
+              fi
+            done
+            
+            # If all attempts failed, try direct resource creation
+            if [ "$SUCCESS" != "true" ]; then
+              echo "All ARM template deployment attempts failed, trying direct resource creation..."
+              
+              # Create with direct resource command
+              WORKSPACE_RESULT=$(az resource create \
+                --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+                --name "log-analytics-mgmt" \
+                --resource-type "Microsoft.OperationalInsights/workspaces" \
+                --location ${{ env.LOCATION }} \
+                --properties "{\"sku\":{\"name\":\"PerGB2018\"},\"retentionInDays\":30}" \
+                --tags Environment=Production DeployedBy=${{ env.DEPLOYMENT_USER }} DeployedAt="${{ env.DEPLOYMENT_TIMESTAMP }}" \
+                --verbose)
+              
+              if [ $? -eq 0 ]; then
+                echo "Workspace created with direct resource command"
+                WORKSPACE_ID=$(echo "$WORKSPACE_RESULT" | jq -r '.id')
+                echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
+                echo "status=created-direct" >> $GITHUB_OUTPUT
+              else
+                echo "ERROR: All attempts to create Log Analytics workspace failed"
+                echo "Last error: $WORKSPACE_RESULT"
+                exit 1
+              fi
             fi
           fi
 
@@ -266,13 +521,44 @@ jobs:
           echo "VNet configuration completed"
 
       # ==========================================================================
-      # DIAGNOSTICS CONFIGURATION
+      # DIAGNOSTICS CONFIGURATION - WITH PROVIDER REGISTRATION CHECK
       # ==========================================================================
       - name: Configure Diagnostics Settings
         id: configure_diagnostics
         if: ${{ (github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '') && env.WORKSPACE_ID != '' && env.VNET_ID != '' }}
         run: |
           echo "Configuring diagnostics settings..."
+          
+          # Check if Microsoft.Insights is registered
+          echo "Verifying Microsoft.Insights registration status..."
+          INSIGHTS_STATUS=$(az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv)
+          echo "Microsoft.Insights status: $INSIGHTS_STATUS"
+          
+          if [ "$INSIGHTS_STATUS" != "Registered" ]; then
+            echo "Microsoft.Insights is not fully registered yet. Waiting for registration to complete..."
+            
+            # Wait for registration with timeout
+            MAX_WAIT=300  # 5 minutes
+            START_TIME=$(date +%s)
+            
+            while [ "$INSIGHTS_STATUS" != "Registered" ]; do
+              CURRENT_TIME=$(date +%s)
+              ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
+              
+              if [ $ELAPSED_TIME -gt $MAX_WAIT ]; then
+                echo "Timeout waiting for Microsoft.Insights registration. Will skip diagnostics configuration."
+                echo "Please run the diagnostics configuration manually later."
+                exit 0
+              fi
+              
+              echo "Waiting for registration to complete. Elapsed time: $ELAPSED_TIME seconds"
+              sleep 15
+              INSIGHTS_STATUS=$(az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv)
+              echo "Microsoft.Insights status: $INSIGHTS_STATUS"
+            done
+            
+            echo "Microsoft.Insights is now registered. Proceeding with diagnostics configuration."
+          fi
           
           # Check if both required resources exist
           if [ -n "$VNET_ID" ] && [ -n "$WORKSPACE_ID" ]; then
@@ -283,6 +569,7 @@ jobs:
               echo "Diagnostics settings already exist for VNet"
             else
               # Configure diagnostics settings for VNet
+              echo "Creating diagnostic settings..."
               DIAG_RESULT=$(az monitor diagnostic-settings create \
                 --name "diag-to-log-analytics" \
                 --resource "$VNET_ID" \
@@ -296,6 +583,8 @@ jobs:
               else
                 echo "WARNING: Failed to configure diagnostics settings"
                 echo "$DIAG_RESULT"
+                echo "This is likely due to Microsoft.Insights not being fully registered yet."
+                echo "You can manually configure diagnostics later."
               fi
             fi
           else
@@ -394,7 +683,8 @@ jobs:
               "logAnalytics": {
                 "deployed": ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }},
                 "name": "log-analytics-mgmt",
-                "id": "${{ env.WORKSPACE_ID || 'not-deployed' }}"
+                "id": "${{ env.WORKSPACE_ID || 'not-deployed' }}",
+                "status": "${{ steps.log_analytics.outputs.status || 'unknown' }}"
               },
               "networking": {
                 "deployed": ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'networking' || github.event.inputs.deploymentType == '' }},
@@ -488,6 +778,8 @@ jobs:
           path: |
             ./deployment-summary.json
             ./deployment-summary.md
+            ./policy-parameters.json
+            ./log-analytics-template.json
           retention-days: 90
 
   # ==========================================================================
