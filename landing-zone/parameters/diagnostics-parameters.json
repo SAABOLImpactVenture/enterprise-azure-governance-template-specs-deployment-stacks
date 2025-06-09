@@ -27,6 +27,12 @@
       "value": {
         "name": "Standard_LRS"
       }
+    },
+    "vnetName": {
+      "value": "vnet-management"
+    },
+    "workspaceId": {
+      "value": "[resourceId('Microsoft.OperationalInsights/workspaces', 'log-analytics-management')]"
     }
   }
 }
