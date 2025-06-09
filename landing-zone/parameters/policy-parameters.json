@@ -21,6 +21,9 @@
       "value": {
         "tagName": {
           "value": "Environment"
+        },
+        "tagValue": {
+          "value": "Production"
         }
       }
     },
