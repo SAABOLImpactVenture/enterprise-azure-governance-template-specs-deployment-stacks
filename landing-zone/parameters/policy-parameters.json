@@ -9,10 +9,10 @@
       "value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"
     },
     "policyDescription": {
-      "value": "Enforces Environment tag on all resources"
+      "value": "Enforces the presence of an Environment tag with value 'Production' on all resources"
     },
     "displayName": {
-      "value": "Require Environment Tag"
+      "value": "Require Environment Tag on All Resources"
     },
     "enforcementMode": {
       "value": "Default"
@@ -26,6 +26,9 @@
           "value": "Production"
         }
       }
+    },
+    "useIdentity": {
+      "value": false
     }
   }
 }

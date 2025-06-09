@@ -3,7 +3,7 @@
   ============================================================
   Azure Policy Assignment with Tokenized Subscription ID
   ============================================================
-  Last Updated: 2025-06-09 20:07:16 UTC
+  Last Updated: 2025-06-09 22:20:00 UTC
   Current User: GEP-V
   
   PROMPT ENGINEERING NOTES:
@@ -29,7 +29,6 @@
   5. When using with Bicep modules:
      - Ensure parameter names match between template specs and Bicep
      - Check for reserved parameter names like 'description' which may conflict
-     - Use consistent naming conventions between all artifacts
   */
   
   "name": "enforce-tag-policy",
@@ -39,24 +38,25 @@
     "scope": "/subscriptions/${LANDINGZONE_SUBSCRIPTION_ID}/resourceGroups/landingZone-RG",
     
     // The policy definition to assign
-    // Again using a token for subscription ID
-    "policyDefinitionId": "/subscriptions/${LANDINGZONE_SUBSCRIPTION_ID}/providers/Microsoft.Authorization/policyDefinitions/audit-cost-center-tag",
+    "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62",
     
-    // Policy parameters section
+    // Policy parameters section - UPDATED to include both required parameters
     "parameters": {
       "tagName": {
-        "value": "CostCenter" // Specifies which tag is required on resources
+        "value": "Environment"
+      },
+      "tagValue": {
+        "value": "Production"
       }
     },
     
-    // Note: If using with Bicep, rename to 'policyDescription' to avoid conflicts
-    "description": "Enforces the presence of a CostCenter tag on all resources in the landing zone",
+    // Optional: description explaining the purpose of this policy assignment
+    "description": "Enforces the presence of an Environment tag with value 'Production' on all resources",
     
     // Optional: display name for the Azure portal
-    "displayName": "Require Cost Center Tag on All Resources",
+    "displayName": "Require Environment Tag on All Resources",
     
-    // Optional: enforcement mode (Default = 0 = enforced, 1 = DoNotEnforce)
-    // Note: This is opposite of what's in the comment - verify correct value
-    "enforcementMode": 0
+    // Enforcement mode as a string (Default = enforced)
+    "enforcementMode": "Default"
   }
 }

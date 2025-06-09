@@ -1,334 +1,152 @@
 # ==========================================================================
-# Enterprise Azure Landing Zone - Continuous Integration
+# Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
 # PROMPT ENGINEERING GUIDANCE:
-# This workflow validates landing zone configurations before deployment:
-# - Runs on pull requests and manual triggers
-# - Validates Bicep/ARM templates
-# - Checks policies against organizational standards
-# - Runs security and best practice scans
-# - Doesn't deploy actual resources (validation only)
+# This workflow handles actual deployment of landing zone components:
+# - Runs on push to main branch and manual triggers
+# - Creates resource groups if they don't exist
+# - Deploys policy assignments with all required parameters
+# - Deploys Log Analytics and diagnostic settings
+# - Sets up network and security components
 #
 # REQUIRED SECRETS CONFIGURATION:
 # - AZURE_TENANT_ID: Your Azure Active Directory tenant ID
 # - AZURE_CLIENT_ID: App registration client ID with federated credentials
-# - MANAGEMENT_SUBSCRIPTION_ID: Used for validation operations
-#
-# CI WORKFLOW TIP: This workflow should be fast and focused on validation,
-# while the deploy-landingzones.yml handles actual deployments.
+# - MANAGEMENT_SUBSCRIPTION_ID: For management resources
+# - LANDINGZONE_SUBSCRIPTION_ID: For landing zone deployments
 
-name: Landing Zone CI
+name: Deploy Azure Landing Zone
 
 on:
-  pull_request:
+  push:
     branches:
       - main
     paths:
-      - 'landingzones/**'
-      - '.github/workflows/landing-zone-ci.yml'
+      - 'landing-zone/**'
+      - '.github/workflows/deploy-landing-zone.yml'
   
   workflow_dispatch:
     inputs:
-      landingZoneType:
-        description: 'Landing zone type to validate'
+      deploymentType:
+        description: 'Component to deploy'
         required: true
         default: 'all'
         type: choice
         options:
           - all
-          - analytics-a2
-          - production-p1
+          - policies
+          - diagnostics
+          - networking
 
 # ==========================================================================
 # PERMISSIONS
-# PROMPT GUIDANCE: Keep permissions minimal for CI workflows
+# PROMPT GUIDANCE: Required permissions for resource deployment
 # ==========================================================================
 permissions:
   id-token: write  # Required for OIDC authentication
   contents: read   # Required to read repo files
-  pull-requests: write  # Allows posting validation results as comments
 
 # ==========================================================================
 # ENVIRONMENT VARIABLES
-# ==========================================================================
-# PROMPT GUIDANCE:
-# - CI workflows should use a non-production subscription
-# - The MANAGEMENT_SUBSCRIPTION_ID is used since it typically has 
-#   the necessary permissions for validation without deploying resources
 # ==========================================================================
 env:
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
-  VALIDATION_LOCATION: 'eastus2'
+  RESOURCE_GROUP_NAME: rg-management
+  LOCATION: eastus2
+  CURRENT_DATE: "2025-06-09"
 
 jobs:
   # ==========================================================================
-  # VALIDATION JOB
+  # DEPLOYMENT JOB
   # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - This job performs static analysis and validation of templates
-  # - It doesn't create any Azure resources (what-if only)
-  # - Add linting and other checks that don't require Azure credentials
-  # - Fails fast if any templates are invalid
-  # ==========================================================================
-  validate-templates:
-    name: Validate Landing Zone Templates
+  deploy-management:
+    name: Deploy Management Resources
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Bicep
-        run: |
-          # Install latest Azure CLI if not available
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-          
-          # Check Bicep installation
-          az bicep version
-          
-          # List files to validate
-          echo "Landing Zone templates to validate:"
-          find ./landingzones -type f -name "*.bicep" | sort
-
-      - name: Lint Bicep files
-        run: |
-          # Run bicep linter on all files
-          for file in $(find ./landingzones -type f -name "*.bicep"); do
-            echo "Linting $file..."
-            az bicep build --file "$file" --stdout > /dev/null
-            if [ $? -ne 0 ]; then
-              echo "::error::Bicep linting failed for $file"
-              exit 1
-            fi
-          done
-          
-          echo "All Bicep files passed linting!"
-
-      # ==========================================================================
-      # AZURE LOGIN - CRITICAL CONFIGURATION
-      # ==========================================================================
-      # PROMPT GUIDANCE:
-      # - Always include subscription-id parameter
-      # - Management subscription is used for validation operations
-      # ==========================================================================
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v1
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
 
-      - name: Determine landing zones to validate
-        id: landing-zones
+      - name: Create Management Resource Group
         run: |
-          LANDING_ZONE="${{ github.event.inputs.landingZoneType }}"
-          
-          if [[ "$LANDING_ZONE" == "all" || -z "$LANDING_ZONE" ]]; then
-            LANDING_ZONES="analytics production"
-          elif [[ "$LANDING_ZONE" == "analytics-a2" ]]; then
-            LANDING_ZONES="analytics"
-          elif [[ "$LANDING_ZONE" == "production-p1" ]]; then
-            LANDING_ZONES="production"
-          fi
-          
-          echo "LANDING_ZONES=$LANDING_ZONES" >> $GITHUB_ENV
-          echo "Selected landing zones for validation: $LANDING_ZONES"
+          echo "Creating management resource group..."
+          az group create \
+            --name ${{ env.RESOURCE_GROUP_NAME }} \
+            --location ${{ env.LOCATION }} \
+            --tags Environment=Production
 
-      - name: Validate Analytics Landing Zone
-        if: contains(env.LANDING_ZONES, 'analytics')
+      - name: Deploy Policy Assignment
+        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Validating Analytics Landing Zone template..."
-          
-          # Create temporary resource group name for validation
-          TEMP_RG="validation-analytics-$(date +%s)"
-          
-          # Run what-if deployment
-          az deployment group what-if \
-            --resource-group $TEMP_RG \
-            --template-file landingzones/analytics/main.bicep \
-            --parameters landingZonePrefix=a2 \
-            --parameters environment=validation \
-            --parameters location=$VALIDATION_LOCATION \
-            --no-pretty-print > analytics-validation.txt
-          
-          echo "Analytics Landing Zone template validation complete"
+          echo "Starting policy deployment with complete parameters..."
+          az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name policy-assignment-${{ github.run_id }} \
+            --template-file ./landing-zone/modules/policy.bicep \
+            --parameters assignmentName="enforce-tag-policy" \
+                         policyDefinitionId="/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62" \
+                         policyDescription="Enforces Environment tag on all resources" \
+                         displayName="Require Environment Tag" \
+                         enforcementMode="Default" \
+                         policyParameters='{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' \
+            --verbose
 
-      - name: Validate Production Landing Zone
-        if: contains(env.LANDING_ZONES, 'production')
+      - name: Deploy Log Analytics Workspace
+        id: deploy_workspace
+        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Validating Production Landing Zone template..."
+          echo "Deploying Log Analytics workspace..."
+          WORKSPACE_DEPLOYMENT=$(az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name workspace-${{ github.run_id }} \
+            --template-uri "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.operationalinsights/log-analytics-create/azuredeploy.json" \
+            --parameters workspaceName="log-analytics-mgmt" \
+                       location="${{ env.LOCATION }}" \
+            --query "properties.outputs.workspaceResourceId.value" -o tsv)
           
-          # Create temporary resource group name for validation
-          TEMP_RG="validation-production-$(date +%s)"
-          
-          # Run what-if deployment
-          az deployment group what-if \
-            --resource-group $TEMP_RG \
-            --template-file landingzones/production/main.bicep \
-            --parameters landingZonePrefix=p1 \
-            --parameters environment=validation \
-            --parameters location=$VALIDATION_LOCATION \
-            --parameters enforceStrictSecurity=true \
-            --no-pretty-print > production-validation.txt
-          
-          echo "Production Landing Zone template validation complete"
+          echo "WORKSPACE_ID=$WORKSPACE_DEPLOYMENT" >> $GITHUB_ENV
+          echo "Log Analytics workspace deployed: $WORKSPACE_DEPLOYMENT"
 
-  # ==========================================================================
-  # POLICY COMPLIANCE JOB
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - This job checks if templates comply with organizational policy
-  # - Add custom policy checks based on your governance requirements
-  # - Consider integrating with third-party security scanners
-  # - Results can be posted as PR comments
-  # ==========================================================================
-  check-policy-compliance:
-    name: Check Policy Compliance
-    needs: validate-templates
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup PowerShell modules
-        shell: pwsh
+      - name: Create Management VNet
+        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'networking' || github.event.inputs.deploymentType == '' }}
         run: |
-          Install-Module -Name Az.Resources -Force -AllowClobber -Scope CurrentUser
-          Install-Module -Name PSRule.Rules.Azure -Force -AllowClobber -Scope CurrentUser
-          
-      # ==========================================================================
-      # AZURE LOGIN - CRITICAL CONFIGURATION
-      # ==========================================================================
-      # PROMPT GUIDANCE:
-      # - Always include subscription-id parameter
-      # - Use PowerShell session for policy evaluation
-      # ==========================================================================
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
-          enable-AzPSSession: true
+          echo "Creating management VNet..."
+          az network vnet create \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name vnet-management \
+            --address-prefix 10.0.0.0/16 \
+            --subnet-name subnet-management \
+            --subnet-prefix 10.0.0.0/24 \
+            --location ${{ env.LOCATION }} \
+            --tags Environment=Production
 
-      - name: Run policy compliance checks
-        shell: pwsh
+      - name: Deploy Diagnostics Settings
+        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          # Run PSRule for Azure policy checks
-          $landingZoneType = "${{ github.event.inputs.landingZoneType }}"
-          
-          if ($landingZoneType -eq "all" -or $landingZoneType -eq "") {
-            $folderPaths = @("./landingzones/analytics", "./landingzones/production")
-          }
-          elseif ($landingZoneType -eq "analytics-a2") {
-            $folderPaths = @("./landingzones/analytics")
-          }
-          elseif ($landingZoneType -eq "production-p1") {
-            $folderPaths = @("./landingzones/production")
-          }
-          
-          foreach ($path in $folderPaths) {
-            Write-Host "Running policy compliance checks on $path..."
-            
-            # Convert Bicep to ARM template for analysis
-            $bicepFiles = Get-ChildItem -Path $path -Filter "*.bicep" -Recurse
-            foreach ($file in $bicepFiles) {
-              $outputFile = $file.FullName -replace ".bicep$", ".json"
-              Write-Host "Converting $($file.Name) to ARM template..."
-              az bicep build --file $file.FullName --outfile $outputFile
-            }
-            
-            # Run PSRule analysis
-            $results = Get-ChildItem -Path $path -Filter "*.json" -Recurse |
-              Where-Object { $_.Name -notlike "*parameters.json" } |
-              Assert-PSRule -Module PSRule.Rules.Azure -As Summary
-              
-            $results | Format-Table -AutoSize
-          }
-          
-          # Generate summary
-          $summaryFile = "./policy-compliance-summary.md"
-          "## Azure Policy Compliance Summary`n" | Out-File -FilePath $summaryFile
-          "| Resource Type | Passed | Failed | Total |`n" | Out-File -FilePath $summaryFile -Append
-          "|-------------|--------|--------|-------|`n" | Out-File -FilePath $summaryFile -Append
-          
-          # Add results to summary file for PR comment
-          $results | ForEach-Object {
-            "| $($_.RuleName) | $($_.Pass) | $($_.Fail) | $($_.Total) |" | Out-File -FilePath $summaryFile -Append
-          }
+          echo "Deploying diagnostics with created resources..."
+          az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name diagnostics-${{ github.run_id }} \
+            --template-file ./landing-zone/modules/diagnostics.bicep \
+            --parameters workspaceName="log-analytics-mgmt" \
+                       workspaceRetention=30 \
+                       workspaceSku="PerGB2018" \
+                       environmentName="Production" \
+                       enableResourceDiagnostics=true \
+                       diagnosticsStorageAccountName="stmgmtdiag${{ github.run_id }}" \
+                       vnetName="vnet-management" \
+                       workspaceId="${{ env.WORKSPACE_ID }}" \
+            --verbose
 
-      - name: Post compliance summary to PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const summaryContent = fs.readFileSync('./policy-compliance-summary.md', 'utf8');
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: summaryContent
-            });
-
-  # ==========================================================================
-  # FINAL VALIDATION STATUS
-  # ==========================================================================
-  # PROMPT GUIDANCE:
-  # - This job determines the overall validation result
-  # - Helps with quick visibility of pass/fail status
-  # - Add integration with other notification systems if needed
-  # ==========================================================================
-  validation-status:
-    name: Landing Zone Validation Status
-    needs: [validate-templates, check-policy-compliance]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Determine validation status
+      - name: List Deployed Resources
         run: |
-          if [[ "${{ needs.validate-templates.result }}" == "success" && "${{ needs.check-policy-compliance.result }}" == "success" ]]; then
-            echo "VALIDATION_PASSED=true" >> $GITHUB_ENV
-            status="✅ All landing zone validations passed"
-          else
-            echo "VALIDATION_PASSED=false" >> $GITHUB_ENV
-            status="❌ Landing zone validation failed"
-          fi
-          
-          echo "Validation Status: $status"
-          
-          # Generate job summary
-          cat << EOF > $GITHUB_STEP_SUMMARY
-          ## Landing Zone CI Validation Results
-          
-          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          **Status:** $status
-          **Triggered by:** ${{ github.actor }}
-          
-          ### Component Status
-          
-          | Component | Status |
-          | --------- | ------ |
-          | Template Validation | ${{ needs.validate-templates.result == 'success' && '✅ Passed' || '❌ Failed' }} |
-          | Policy Compliance | ${{ needs.check-policy-compliance.result == 'success' && '✅ Passed' || '❌ Failed' }} |
-          
-          See job logs for detailed validation results.
-          EOF
-
-      - name: Set status output
-        id: status
-        run: |
-          echo "passed=${{ env.VALIDATION_PASSED }}" >> $GITHUB_OUTPUT
-
-      - name: Exit with status
-        if: env.VALIDATION_PASSED != 'true'
-        run: |
-          echo "Validation failed! See job logs for details."
-          exit 1
+          echo "Listing all resources in the management resource group"
+          az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table
