@@ -8,7 +8,10 @@
     "lint": "eslint .",
     "build": "tsc",
     "start": "node dist/index.js",
+    "deploy": "node smart-contracts/scripts/deploy.js",
+    "deploy:contracts": "node smart-contracts/scripts/deploy.js",
     "deploy:identity": "az deployment sub create --name identity --location eastus2 --template-file landing-zone/modules/identity-network.bicep",
+    "deploy:keyvault": "az deployment group create --name keyvault --resource-group rg-identity --template-file landing-zone/modules/key-vault.bicep",
     "validate:bicep": "az bicep build --file landing-zone/modules/identity-network.bicep"
   },
   "repository": {
@@ -20,7 +23,8 @@
     "governance",
     "bicep",
     "template-specs",
-    "deployment-stacks"
+    "deployment-stacks",
+    "smart-contracts"
   ],
   "author": "GEP-V",
   "license": "MIT",
