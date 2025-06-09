@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "production"
+    },
+    "location": {
+      "value": "eastus2"
+    },
+    
+    /* Policy parameters */
+    "assignmentName": {
+      "value": "enforce-tag-policy"
+    },
+    "policyDefinitionId": {
+      "value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"
+    },
+    "policyDescription": {
+      "value": "Enforces presence of required tags"
+    },
+    "displayName": {
+      "value": "Require Tags on All Resources"
+    },
+    "policyParameters": {
+      "value": {
+        "tagName": {
+          "value": "Environment"
+        }
+      }
+    },
+    
+    /* Diagnostics parameters */
+    "workspaceName": {
+      "value": "log-analytics-management"
+    },
+    "workspaceRetention": {
+      "value": 30
+    },
+    "workspaceSku": {
+      "value": "PerGB2018"
+    },
+    "dataRetention": {
+      "value": 90
+    },
+    "diagnosticsStorageAccountName": {
+      "value": "stmgmtdiag"
+    },
+    "diagnosticsStorageAccountSku": {
+      "value": {
+        "name": "Standard_LRS"
+      }
+    }
+  }
+}
