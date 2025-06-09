@@ -1,62 +1,73 @@
 {
-  /*
-  ============================================================
-  Azure Policy Assignment with Tokenized Subscription ID
-  ============================================================
-  Last Updated: 2025-06-09 22:20:00 UTC
-  Current User: GEP-V
-  
-  PROMPT ENGINEERING NOTES:
-  When creating policy assignment templates for Azure:
-  
-  1. Always use tokens for subscription IDs and tenant-specific values
-     - Replace hardcoded IDs with ${TOKEN_NAME} format
-     - This prevents security risks and enables deployment flexibility
-  
-  2. Include comments explaining:
-     - The policy's purpose and impact
-     - Any parameters and their expected values
-     - The scope of application (subscription, resource group, etc.)
-  
-  3. Request schema validation when generating templates
-     - "Ensure the JSON follows Azure policy assignment schema"
-     - "Make sure all required properties are included"
-  
-  4. Specify the format needed for ARM deployment vs. Azure CLI
-     - ARM templates use parameters and variables differently
-     - CLI-based approaches use direct token replacement
-  
-  5. When using with Bicep modules:
-     - Ensure parameter names match between template specs and Bicep
-     - Check for reserved parameter names like 'description' which may conflict
-  */
-  
-  "name": "enforce-tag-policy",
-  "properties": {
-    // The scope determines where the policy applies
-    // Using a token for subscription ID rather than hardcoding
-    "scope": "/subscriptions/${LANDINGZONE_SUBSCRIPTION_ID}/resourceGroups/landingZone-RG",
-    
-    // The policy definition to assign
-    "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62",
-    
-    // Policy parameters section - UPDATED to include both required parameters
-    "parameters": {
-      "tagName": {
-        "value": "Environment"
-      },
-      "tagValue": {
-        "value": "Production"
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Azure Policy Assignment with Tokenized Subscription ID",
+    "lastUpdated": "2025-06-09 23:06:11 UTC",
+    "user": "GEP-V"
+  },
+  "parameters": {
+    "policyName": {
+      "type": "string",
+      "defaultValue": "enforce-tag-policy",
+      "metadata": {
+        "description": "Name of the policy assignment"
       }
     },
-    
-    // Optional: description explaining the purpose of this policy assignment
-    "description": "Enforces the presence of an Environment tag with value 'Production' on all resources",
-    
-    // Optional: display name for the Azure portal
-    "displayName": "Require Environment Tag on All Resources",
-    
-    // Enforcement mode as a string (Default = enforced)
-    "enforcementMode": "Default"
+    "tagName": {
+      "type": "string",
+      "defaultValue": "Environment",
+      "metadata": {
+        "description": "Name of the tag to enforce"
+      }
+    },
+    "tagValue": {
+      "type": "string",
+      "defaultValue": "Production",
+      "metadata": {
+        "description": "Value of the tag to enforce"
+      }
+    },
+    "subscriptionId": {
+      "type": "string",
+      "defaultValue": "[subscription().subscriptionId]",
+      "metadata": {
+        "description": "Subscription ID for policy scope"
+      }
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group name for policy scope"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('policyName')]",
+      "properties": {
+        "policyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62",
+        "parameters": {
+          "tagName": {
+            "value": "[parameters('tagName')]"
+          },
+          "tagValue": {
+            "value": "[parameters('tagValue')]"
+          }
+        },
+        "description": "[concat('Enforces the presence of a ', parameters('tagName'), ' tag with value ''', parameters('tagValue'), ''' on all resources')]",
+        "displayName": "[concat('Require ', parameters('tagName'), ' Tag on All Resources')]",
+        "enforcementMode": "Default"
+      }
+    }
+  ],
+  "outputs": {
+    "policyAssignmentId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Authorization/policyAssignments', parameters('policyName'))]"
+    }
   }
 }
