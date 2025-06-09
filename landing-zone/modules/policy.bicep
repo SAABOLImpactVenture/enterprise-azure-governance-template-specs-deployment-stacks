@@ -1,7 +1,7 @@
 // ───────────────────────────────────────────────────────────────────────────────────
 // Azure Landing Zone Policy Assignment Module
 // ───────────────────────────────────────────────────────────────────────────────────
-// Current Date and Time (UTC): 2025-06-09 20:02:02
+// Current Date and Time (UTC): 2025-06-09 20:17:15
 // Current User's Login: GEP-V
 
 targetScope = 'resourceGroup'
@@ -26,12 +26,12 @@ param policyParameters object = {}
 param displayName string = assignmentName
 
 @description('Description for the policy assignment')
-param policyDescription string = 'Policy Assignment created through Bicep'  // Renamed from "description" to "policyDescription"
+param policyDescription string = 'Policy Assignment created through Bicep'
 
-@description('Enforcement mode for the policy. Default is 1 (enforced)')
+@description('Enforcement mode for the policy. Default is Default (enforced)')
 @allowed([
-  'Default'   // 0
-  'DoNotEnforce'  // 1
+  'Default'
+  'DoNotEnforce'
 ])
 param enforcementMode string = 'Default'
 
@@ -52,15 +52,9 @@ param useIdentity bool = false
 @description('Location for the policy assignment when using managed identity')
 param location string = resourceGroup().location
 
-@description('Tags to apply to the policy assignment')
-param tags object = {}
-
 // ───────────────────────────────────────────────────────────────────────────────────
 // VARIABLES
 // ───────────────────────────────────────────────────────────────────────────────────
-
-// Convert enforcement mode string to integer value
-var enforcementModeValue = enforcementMode == 'Default' ? 0 : 1
 
 // Non-compliance message object
 var nonComplianceMessageObject = {
@@ -77,10 +71,10 @@ resource policyAssignment 'Microsoft.Authorization/policyAssignments@2022-06-01'
   location: useIdentity ? location : null
   properties: {
     displayName: displayName
-    description: policyDescription  // Use the renamed parameter here
+    description: policyDescription
     policyDefinitionId: policyDefinitionId
     parameters: policyParameters
-    enforcementMode: enforcementModeValue
+    enforcementMode: enforcementMode // Changed from integer to string
     nonComplianceMessages: [
       nonComplianceMessageObject
     ]
@@ -89,7 +83,7 @@ resource policyAssignment 'Microsoft.Authorization/policyAssignments@2022-06-01'
   identity: useIdentity ? {
     type: 'SystemAssigned'
   } : null
-  tags: tags
+  // Removed tags property as it's not valid for this resource type
 }
 
 // ───────────────────────────────────────────────────────────────────────────────────
@@ -106,7 +100,7 @@ output policyAssignmentName string = policyAssignment.name
 output identityPrincipalId string = useIdentity ? policyAssignment.identity.principalId : ''
 
 @description('Enforcement mode of the policy assignment')
-output enforcementMode int = enforcementModeValue
+output enforcementMode string = enforcementMode // Changed from integer to string
 
 @description('Resource group scope of the policy assignment')
 output scope string = resourceGroup().id
