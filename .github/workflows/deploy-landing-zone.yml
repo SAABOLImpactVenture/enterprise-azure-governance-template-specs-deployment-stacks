@@ -1,6 +1,9 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
+# Last Updated: 2025-06-09 22:40:25
+# User: GEP-V
+
 name: Deploy Azure Landing Zone
 
 on:
@@ -58,58 +61,38 @@ jobs:
             --location ${{ env.LOCATION }} \
             --tags Environment=Production
 
-      - name: Deploy Policy Assignment - Direct JSON Parameters
+      - name: Deploy Policy Assignment
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Starting policy deployment with inline JSON parameters..."
+          echo "Deploying policy assignment with parameter file..."
           az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name policy-${{ github.run_id }} \
             --template-file ./landing-zone/modules/policy.bicep \
-            --parameters '{
-              "assignmentName": {"value": "enforce-tag-policy"},
-              "policyDefinitionId": {"value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"},
-              "policyDescription": {"value": "Enforces Environment tag on all resources"},
-              "displayName": {"value": "Require Environment Tag"},
-              "enforcementMode": {"value": "Default"},
-              "policyParameters": {"value": {
-                "tagName": {"value": "Environment"},
-                "tagValue": {"value": "Production"}
-              }}
-            }'
+            --parameters @./landing-zone/parameters/policy-parameters.json \
+            --verbose
 
-      - name: Deploy Log Analytics Workspace Using Local Template
-        id: deploy_workspace
+      - name: Deploy Log Analytics Workspace
+        id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying Log Analytics workspace using local template..."
-          WORKSPACE_ID=$(az deployment group create \
+          echo "Deploying Log Analytics workspace..."
+          az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --name workspace-${{ github.run_id }} \
             --template-file ./landing-zone/modules/log-analytics.bicep \
-            --parameters workspaceName="log-analytics-mgmt" \
-                       location="${{ env.LOCATION }}" \
-                       retentionInDays=30 \
-                       sku="PerGB2018" \
-            --query "properties.outputs.workspaceId.value" -o tsv)
+            --parameters workspaceName=log-analytics-mgmt \
+                         location=${{ env.LOCATION }} \
+                         retentionInDays=30 \
+                         sku=PerGB2018 \
+            --verbose
           
+          # Get workspace ID for later use
+          WORKSPACE_ID=$(az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type Microsoft.OperationalInsights/workspaces --query "[0].id" -o tsv)
           echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_ENV
-          echo "Log Analytics workspace deployed: $WORKSPACE_ID"
-
-      - name: Create Management VNet
-        if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'networking' || github.event.inputs.deploymentType == '' }}
-        run: |
-          echo "Creating management VNet..."
-          az network vnet create \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --name vnet-management \
-            --address-prefix 10.0.0.0/16 \
-            --subnet-name subnet-management \
-            --subnet-prefix 10.0.0.0/24 \
-            --location ${{ env.LOCATION }} \
-            --tags Environment=Production
+          echo "Log Analytics workspace ID: $WORKSPACE_ID"
 
       - name: List Deployed Resources
         run: |
-          echo "Listing all resources in the management resource group"
+          echo "Listing all resources in the management resource group:"
           az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table

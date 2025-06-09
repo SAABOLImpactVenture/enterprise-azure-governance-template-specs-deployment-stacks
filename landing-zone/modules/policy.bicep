@@ -4,21 +4,21 @@ param assignmentName string
 @description('Resource ID of the policy definition to assign')
 param policyDefinitionId string
 
-@description('Parameters for the policy assignment')
-param policyParameters object = {}
-
 @description('Display name for the policy assignment')
 param displayName string = assignmentName
 
 @description('Description for the policy assignment')
 param policyDescription string = 'Policy Assignment created through Bicep'
 
-@description('Enforcement mode for the policy')
+@description('Enforcement mode for the policy assignment')
 @allowed([
   'Default'
   'DoNotEnforce'
 ])
 param enforcementMode string = 'Default'
+
+@description('Parameters for the policy assignment')
+param policyParameters object
 
 @description('Whether to use a managed identity for the policy assignment')
 param useIdentity bool = false
