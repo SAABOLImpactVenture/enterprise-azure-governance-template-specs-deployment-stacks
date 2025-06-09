@@ -30,7 +30,7 @@
   "homepage": "https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks#readme",
   "dependencies": {
     "@azure/arm-resources": "^5.2.0",
-    "@azure/identity": "^3.2.1",
+    "@azure/identity": "^4.10.0",
     "@azure/keyvault-secrets": "^4.7.0",
     "dotenv": "^16.0.3",
     "yargs": "^17.7.1"
