@@ -9,10 +9,10 @@
       "value": "/providers/Microsoft.Authorization/policyDefinitions/1e30110a-5ceb-460c-a204-c1c3969c6d62"
     },
     "policyDescription": {
-      "value": "Enforces the presence of required tags on all resources"
+      "value": "Enforces required Environment tag on all resources"
     },
     "displayName": {
-      "value": "Require Tags on All Resources"
+      "value": "Require Environment Tag on Resources"
     },
     "enforcementMode": {
       "value": "Default"
