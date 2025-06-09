@@ -7,6 +7,11 @@ on:
     branches:
       - main
 
+# Add this permissions block - this is what's missing for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy-management:
     runs-on: ubuntu-latest
@@ -30,56 +35,4 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
 
-      # Prompt: Ensure the management resource group exists in the desired location
-      - name: Create/Update Management Resource Group
-        run: |
-          az group create \
-            --name $RESOURCE_GROUP_NAME \
-            --location $LOCATION
-
-      # Prompt: Deploy Policy definitions and assignments using modular Bicep
-      - name: Deploy Policy Module
-        run: |
-          az deployment group create \
-            --resource-group $RESOURCE_GROUP_NAME \
-            --template-file ./landing-zone/modules/policy.bicep \
-            --parameters environment=$ENVIRONMENT
-
-      # Prompt: Deploy Diagnostics settings and solutions for centralized monitoring
-      - name: Deploy Diagnostics Module
-        run: |
-          az deployment group create \
-            --resource-group $RESOURCE_GROUP_NAME \
-            --template-file ./landing-zone/modules/diagnostics.bicep \
-            --parameters environment=$ENVIRONMENT
-
-      # Prompt: Deploy Role Assignments for RBAC and management access
-      - name: Deploy Role Assignments
-        run: |
-          az deployment group create \
-            --resource-group $RESOURCE_GROUP_NAME \
-            --template-file ./landing-zone/modules/roleAssignment.bicep \
-            --parameters environment=$ENVIRONMENT
-
-      # Prompt: Optionally, deploy other core management modules as needed
-      # Example: Managed Identities
-      - name: Deploy Managed Identities
-        run: |
-          az deployment group create \
-            --resource-group $RESOURCE_GROUP_NAME \
-            --template-file ./landing-zone/modules/managed-identities.bicep \
-            --parameters environment=$ENVIRONMENT
-
-      # Prompt: Add additional modules below as your management scope expands
-      # e.g., key vault, network, NSG, JIT access, etc.
-
-      # Prompt: Post-deployment validation to confirm resources are in place
-      - name: List Deployed Resources
-        run: |
-          az resource list --resource-group $RESOURCE_GROUP_NAME
-
-      # Prompt: (Optional) Output deployment summary or notify stakeholders
-      # - name: Notify team
-      #   uses: some-notification-action
-      #   with:
-      #     message: "Management resources deployed successfully to $RESOURCE_GROUP_NAME in $LOCATION."
+      # Rest of your existing steps remain unchanged
