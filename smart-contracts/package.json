@@ -1,54 +1,39 @@
 {
-  "name": "enterprise-azure-governance-template-specs-deployment-stacks",
+  "name": "smart-contracts",
   "version": "1.0.0",
-  "description": "Enterprise Azure Governance with Template Specs and Deployment Stacks",
+  "description": "Smart contracts for enterprise governance",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"No tests implemented yet - passing CI\" && exit 0",
-    "lint": "eslint .",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "deploy": "node smart-contracts/scripts/deploy.js",
-    "deploy:contracts": "node smart-contracts/scripts/deploy.js",
-    "deploy:identity": "az deployment sub create --name identity --location eastus2 --template-file landing-zone/modules/identity-network.bicep",
-    "deploy:keyvault": "az deployment group create --name keyvault --resource-group rg-identity --template-file landing-zone/modules/key-vault.bicep",
-    "validate:bicep": "az bicep build --file landing-zone/modules/identity-network.bicep"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks.git"
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy": "node scripts/deploy.js",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network goerli"
   },
   "keywords": [
-    "azure",
-    "governance",
-    "bicep",
-    "template-specs",
-    "deployment-stacks",
+    "ethereum",
+    "hardhat",
+    "solidity",
     "smart-contracts"
   ],
   "author": "GEP-V",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks/issues"
-  },
-  "homepage": "https://github.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks#readme",
-  "dependencies": {
-    "@azure/arm-resources": "^5.2.0",
-    "@azure/identity": "^4.10.0",
-    "@azure/keyvault-secrets": "^4.7.0",
-    "dotenv": "^16.0.3",
-    "yargs": "^17.7.1"
-  },
   "devDependencies": {
-    "@types/node": "^18.16.0",
-    "@types/yargs": "^17.0.24",
-    "@typescript-eslint/eslint-plugin": "^5.59.1",
-    "@typescript-eslint/parser": "^5.59.1",
-    "eslint": "^8.39.0",
-    "typescript": "^5.0.4"
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.0",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "chai": "^4.2.0",
+    "ethers": "^6.0.0",
+    "hardhat": "^2.19.4",
+    "hardhat-gas-reporter": "^1.0.8",
+    "solidity-coverage": "^0.8.1"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "resolutions": {
     "cookie": "^0.7.0"
