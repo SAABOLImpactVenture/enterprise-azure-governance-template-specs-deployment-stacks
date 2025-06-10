@@ -1,7 +1,7 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-10 12:20:49 UTC
+# Last Updated: 2025-06-10 12:27:13 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
@@ -13,8 +13,8 @@
 #
 # BEST PRACTICES IMPLEMENTED:
 # 1. Resource provider registration before deployment
-# 2. Simple file-based approach for policy assignments
-# 3. Direct commands to avoid external dependencies
+# 2. Minimalist direct command approach - no variable substitution
+# 3. No external dependencies or templates
 # 4. Resource ID capturing for cross-resource configuration
 # 5. Detailed logging and error handling
 
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-10 12:20:49"
+  DEPLOYMENT_TIMESTAMP: "2025-06-10 12:27:13"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
@@ -152,44 +152,35 @@ jobs:
           fi
 
       # ==========================================================================
-      # POLICY ASSIGNMENT DEPLOYMENT - SIMPLIFIED FILE APPROACH
+      # POLICY ASSIGNMENT DEPLOYMENT - ULTRA MINIMAL APPROACH
       # ==========================================================================
-      - name: Deploy Policy Using Simplified File Approach
+      - name: Deploy Policy Using Direct Command - No Parameter Variables
         id: deploy_policy
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Starting policy deployment using simplified file approach..."
+          echo "Starting policy deployment using ultra minimal approach..."
           
-          # Set basic variables
-          SUBSCRIPTION_ID="${{ env.MANAGEMENT_SUBSCRIPTION_ID }}"
+          # Get the subscription ID
+          SUBSCRIPTION_ID=${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
+          echo "Working with Subscription: $SUBSCRIPTION_ID"
+          
+          # Set scope
           RESOURCE_GROUP="${{ env.RESOURCE_GROUP_NAME }}"
           SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+          echo "Using scope: $SCOPE"
           
-          echo "==== POLICY ASSIGNMENT STEP ===="
-          echo "Created: ${{ env.DEPLOYMENT_TIMESTAMP }}"
-          echo "Author: ${{ env.DEPLOYMENT_USER }}"
-          echo "Subscription: $SUBSCRIPTION_ID"
-          echo "Resource Group: $RESOURCE_GROUP"
-          echo "Scope: $SCOPE"
-          echo "============================"
-          
-          # Delete any existing policy assignment
-          echo "Removing existing policy assignment (if any)..."
+          # Remove any existing policy assignment with this name
+          echo "Removing any existing policy assignment..."
           az policy assignment delete --name enforce-tag-policy --scope $SCOPE 2>/dev/null || true
           
-          # Create a parameters file with the simplest possible format
-          echo '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' > policy-params.json
-          echo "Parameter file content:"
-          cat policy-params.json
-          
-          # Assign the policy using the parameter file
-          echo "Assigning policy with parameter file..."
+          # Create policy assignment with hard-coded parameters - NOTHING DYNAMIC
+          echo "Creating policy assignment with hard-coded parameters..."
           POLICY_RESULT=$(az policy assignment create \
-            --name enforce-tag-policy \
+            --name "enforce-tag-policy" \
             --display-name "Require Environment Tag" \
             --description "Enforces Environment tag on all resources" \
-            --policy 1e30110a-5ceb-460c-a204-c1c3969c6d62 \
-            --params @policy-params.json \
+            --policy "1e30110a-5ceb-460c-a204-c1c3969c6d62" \
+            --params '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' \
             --scope $SCOPE \
             --enforcement-mode Default)
           
@@ -203,29 +194,24 @@ jobs:
             echo "$POLICY_RESULT"
             exit 1
           fi
-          
-          # Verify policy assignment
-          echo "Verifying policy assignment..."
-          az policy assignment show --name enforce-tag-policy --scope $SCOPE
 
       # ==========================================================================
-      # LOG ANALYTICS WORKSPACE DEPLOYMENT - USING DIRECT COMMAND
+      # LOG ANALYTICS WORKSPACE DEPLOYMENT - DIRECT RESOURCE CREATION
       # ==========================================================================
-      - name: Deploy Log Analytics Workspace Using Direct Command
+      - name: Deploy Log Analytics Workspace Using Direct Resource Creation
         id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Deploying Log Analytics workspace using direct command..."
+          echo "Deploying Log Analytics workspace using direct resource creation..."
           
           # Define workspace variables
           WORKSPACE_NAME="log-analytics-mgmt"
-          SKU="PerGB2018"
-          RETENTION_DAYS=30
           
           # Check if workspace already exists
           echo "Checking if workspace already exists..."
-          EXISTING_WORKSPACE=$(az monitor log-analytics workspace list \
+          EXISTING_WORKSPACE=$(az resource list \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --resource-type "Microsoft.OperationalInsights/workspaces" \
             --query "[?name=='$WORKSPACE_NAME'].id" -o tsv)
           
           if [ -n "$EXISTING_WORKSPACE" ]; then
@@ -233,14 +219,14 @@ jobs:
             echo "WORKSPACE_ID=$EXISTING_WORKSPACE" >> $GITHUB_ENV
             echo "status=exists" >> $GITHUB_OUTPUT
           else
-            # Create workspace directly
-            echo "Creating Log Analytics workspace directly..."
-            WORKSPACE_RESULT=$(az monitor log-analytics workspace create \
+            # Create workspace using resource create command - AVOID LOG ANALYTICS SPECIFIC COMMANDS
+            echo "Creating Log Analytics workspace using resource create command..."
+            WORKSPACE_RESULT=$(az resource create \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-              --workspace-name $WORKSPACE_NAME \
+              --name $WORKSPACE_NAME \
+              --resource-type "Microsoft.OperationalInsights/workspaces" \
               --location ${{ env.LOCATION }} \
-              --sku $SKU \
-              --retention-time $RETENTION_DAYS \
+              --properties '{"sku":{"name":"PerGB2018"},"retentionInDays":30}' \
               --tags Environment=Production DeployedBy=${{ env.DEPLOYMENT_USER }} DeployedAt="${{ env.DEPLOYMENT_TIMESTAMP }}")
             
             if [ $? -eq 0 ]; then
@@ -565,7 +551,7 @@ jobs:
           
           echo ""
           echo "Log Analytics Workspace:"
-          az monitor log-analytics workspace list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table
+          az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type Microsoft.OperationalInsights/workspaces -o table
           
           echo ""
           echo "Deployment completed successfully at ${{ env.DEPLOYMENT_TIMESTAMP }}"
@@ -582,7 +568,6 @@ jobs:
           path: |
             ./deployment-summary.json
             ./deployment-summary.md
-            ./policy-params.json
           retention-days: 90
 
   # ==========================================================================
