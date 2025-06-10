@@ -1,51 +1,81 @@
 #!/bin/bash
-# Direct Policy Assignment Script
-# Created: 2025-06-09 23:43:43
+# ==============================================================================
+# DIRECT POLICY ASSIGNMENT - NO EXTERNAL DEPENDENCIES
+# Created: 2025-06-10 12:36:03
 # Author: GEP-V
+# ==============================================================================
 
-# This script uses the simplest possible approach to assign an Azure policy
-# with properly formatted parameters to avoid the "MissingPolicyParameter" error.
-
-# Set variables
+# Set variables (update these as needed)
+SUBSCRIPTION_ID="your-subscription-id"  # Replace with actual ID or set with: SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 RESOURCE_GROUP="rg-management"
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
 POLICY_DEF_ID="1e30110a-5ceb-460c-a204-c1c3969c6d62"
-TAG_NAME="Environment"
-TAG_VALUE="Production"
+POLICY_NAME="enforce-tag-policy"
 
-echo "============================================================"
-echo "POLICY ASSIGNMENT - DIRECT APPROACH"
-echo "Created: 2025-06-09 23:43:43"
-echo "Author: GEP-V"
-echo "============================================================"
+# Set subscription context
+echo "Setting subscription context to $SUBSCRIPTION_ID..."
+az account set --subscription $SUBSCRIPTION_ID
 
-echo "Policy Definition ID: $POLICY_DEF_ID"
-echo "Scope: $SCOPE"
-echo "Tag Name: $TAG_NAME"
-echo "Tag Value: $TAG_VALUE"
-echo ""
+# Remove any existing policy assignment with this name
+echo "Removing any existing policy assignment..."
+az policy assignment delete --name $POLICY_NAME --scope $SCOPE 2>/dev/null || true
 
-# Delete any existing policy assignment
-echo "Removing existing policy assignment (if any)..."
-az policy assignment delete --name enforce-tag-policy --scope $SCOPE || true
+# Create a parameters JSON file
+echo "Creating parameters file..."
+cat > policy-params.json << EOF
+{
+  "tagName": {
+    "value": "Environment"
+  },
+  "tagValue": {
+    "value": "Production"
+  }
+}
+EOF
 
-# Create parameter string directly
-PARAMS="{\"tagName\":{\"value\":\"$TAG_NAME\"},\"tagValue\":{\"value\":\"$TAG_VALUE\"}}"
-echo "Using parameter string: $PARAMS"
+echo "Parameter file content:"
+cat policy-params.json
 
-# Create policy assignment directly (without template or parameter files)
-echo "Creating policy assignment with direct parameters..."
-az policy assignment create \
-  --name "enforce-tag-policy" \
-  --display-name "Require $TAG_NAME Tag" \
-  --description "Enforces $TAG_NAME tag with value $TAG_VALUE on all resources" \
+# Assign the policy using the parameter file
+echo "Assigning policy with parameter file..."
+POLICY_RESULT=$(az policy assignment create \
+  --name $POLICY_NAME \
+  --display-name "Require Environment Tag" \
+  --description "Enforces Environment tag on all resources" \
   --policy $POLICY_DEF_ID \
-  --params "$PARAMS" \
+  --params @policy-params.json \
   --scope $SCOPE \
-  --enforcement-mode Default
+  --enforcement-mode Default)
 
-# Verify the assignment was created successfully
-echo ""
+if [ $? -eq 0 ]; then
+  echo "Policy assignment successful!"
+  POLICY_ID=$(echo "$POLICY_RESULT" | jq -r '.id')
+  echo "Policy ID: $POLICY_ID"
+else
+  echo "Policy assignment failed. Trying alternative approach..."
+  
+  # Try direct inline parameters approach
+  POLICY_RESULT=$(az policy assignment create \
+    --name $POLICY_NAME \
+    --display-name "Require Environment Tag" \
+    --description "Enforces Environment tag on all resources" \
+    --policy $POLICY_DEF_ID \
+    --params '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' \
+    --scope $SCOPE \
+    --enforcement-mode Default)
+  
+  if [ $? -eq 0 ]; then
+    echo "Policy assignment with inline parameters successful!"
+    POLICY_ID=$(echo "$POLICY_RESULT" | jq -r '.id')
+    echo "Policy ID: $POLICY_ID"
+  else
+    echo "All policy assignment attempts failed."
+    echo "$POLICY_RESULT"
+    exit 1
+  fi
+fi
+
 echo "Verifying policy assignment..."
-az policy assignment show --name enforce-tag-policy --scope $SCOPE
+az policy assignment show --name $POLICY_NAME --scope $SCOPE
+
+echo "Deployment complete."
