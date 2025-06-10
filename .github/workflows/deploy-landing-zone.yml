@@ -1,7 +1,7 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-09 23:44:50 UTC
+# Last Updated: 2025-06-10 12:20:49 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
@@ -13,8 +13,8 @@
 #
 # BEST PRACTICES IMPLEMENTED:
 # 1. Resource provider registration before deployment
-# 2. Direct command approach for policy assignments
-# 3. Inline templates to avoid external dependencies
+# 2. Simple file-based approach for policy assignments
+# 3. Direct commands to avoid external dependencies
 # 4. Resource ID capturing for cross-resource configuration
 # 5. Detailed logging and error handling
 
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-09 23:44:50"
+  DEPLOYMENT_TIMESTAMP: "2025-06-10 12:20:49"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
@@ -152,31 +152,44 @@ jobs:
           fi
 
       # ==========================================================================
-      # POLICY ASSIGNMENT DEPLOYMENT - DIRECT COMMAND APPROACH
+      # POLICY ASSIGNMENT DEPLOYMENT - SIMPLIFIED FILE APPROACH
       # ==========================================================================
-      - name: Deploy Policy Using Direct Command
+      - name: Deploy Policy Using Simplified File Approach
         id: deploy_policy
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
-          echo "Starting policy deployment using direct command..."
+          echo "Starting policy deployment using simplified file approach..."
           
-          # Set variables
-          RESOURCE_GROUP="${{ env.RESOURCE_GROUP_NAME }}"
+          # Set basic variables
           SUBSCRIPTION_ID="${{ env.MANAGEMENT_SUBSCRIPTION_ID }}"
+          RESOURCE_GROUP="${{ env.RESOURCE_GROUP_NAME }}"
           SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+          
+          echo "==== POLICY ASSIGNMENT STEP ===="
+          echo "Created: ${{ env.DEPLOYMENT_TIMESTAMP }}"
+          echo "Author: ${{ env.DEPLOYMENT_USER }}"
+          echo "Subscription: $SUBSCRIPTION_ID"
+          echo "Resource Group: $RESOURCE_GROUP"
+          echo "Scope: $SCOPE"
+          echo "============================"
           
           # Delete any existing policy assignment
           echo "Removing existing policy assignment (if any)..."
           az policy assignment delete --name enforce-tag-policy --scope $SCOPE 2>/dev/null || true
           
-          # Create policy assignment with direct inline parameters (no variable)
-          echo "Creating policy assignment with direct inline parameters..."
+          # Create a parameters file with the simplest possible format
+          echo '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' > policy-params.json
+          echo "Parameter file content:"
+          cat policy-params.json
+          
+          # Assign the policy using the parameter file
+          echo "Assigning policy with parameter file..."
           POLICY_RESULT=$(az policy assignment create \
-            --name "enforce-tag-policy" \
+            --name enforce-tag-policy \
             --display-name "Require Environment Tag" \
-            --description "Enforces Environment tag with value Production on all resources" \
-            --policy "1e30110a-5ceb-460c-a204-c1c3969c6d62" \
-            --params '{"tagName":{"value":"Environment"},"tagValue":{"value":"Production"}}' \
+            --description "Enforces Environment tag on all resources" \
+            --policy 1e30110a-5ceb-460c-a204-c1c3969c6d62 \
+            --params @policy-params.json \
             --scope $SCOPE \
             --enforcement-mode Default)
           
@@ -190,6 +203,10 @@ jobs:
             echo "$POLICY_RESULT"
             exit 1
           fi
+          
+          # Verify policy assignment
+          echo "Verifying policy assignment..."
+          az policy assignment show --name enforce-tag-policy --scope $SCOPE
 
       # ==========================================================================
       # LOG ANALYTICS WORKSPACE DEPLOYMENT - USING DIRECT COMMAND
@@ -565,6 +582,7 @@ jobs:
           path: |
             ./deployment-summary.json
             ./deployment-summary.md
+            ./policy-params.json
           retention-days: 90
 
   # ==========================================================================
