@@ -203,4 +203,4 @@ Below are the primary wiki pages; each has an intro stub in `/wiki`:
 * **Troubleshooting** (`troubleshooting.md`)
 * **FAQ** (`faq.md`)
 
-*Feel free to suggest more styling touches or additional sections!*
+
