@@ -1,4 +1,4 @@
-[![Landing Zone CI](https://img.shields.io/github/actions/workflow/status/YourOrg/YourRepo/landing-zone-ci.yml?branch=main)](https://github.com/YourOrg/YourRepo/actions/workflows/landing-zone-ci.yml) [![Smart Contract CI/CD](https://img.shields.io/github/actions/workflow/status/YourOrg/YourRepo/hardhat-ci.yml?branch=main)](https://github.com/YourOrg/YourRepo/actions/workflows/hardhat-ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE.md)
+ [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE.md)
 
 ---
 
