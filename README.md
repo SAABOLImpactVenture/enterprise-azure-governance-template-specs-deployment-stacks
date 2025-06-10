@@ -1,131 +1,206 @@
-# Enterprise-Scale Landing Zone + Smart Contract CI/CD (Azure + GitHub)
-
-This project demonstrates a modern cloud-native architecture that integrates **Azure Enterprise-Scale Infrastructure-as-Code** with a **Smart Contract CI/CD pipeline using Hardhat**, fully managed through **Visual Studio Code and GitHub**.
-
-## 🚀 Overview
-
-- **Enterprise-Scale Bicep Templates** for Azure landing zones
-- **Smart Contracts** built with Solidity + Hardhat
-- **CI/CD Workflows** using GitHub Actions for both infrastructure and blockchain
-- **Secure VM Provisioning** via Azure DevTest Labs
-- **Network Hardening** with NSGs, Diagnostics, and Just-In-Time (JIT) Access
-- **Documentation and Wiki** for step-by-step guidance
-
-
-## 🧱 Tech Stack
-
-- **Azure Bicep**
-- **GitHub Actions**
-- **Azure DevTest Labs**
-- **NSG + Diagnostics + JIT**
-- **Solidity + Hardhat**
-- **Visual Studio Code**
-
-## 📚 Getting Started
-
-1. Clone the repository  
-   ```bash
-   git clone https://github.com/<your-username>/<your-repo-name>.git
-
-
-This repository delivers a complete, extensible, and enterprise-grade Azure environment using:
-
-- **Bicep** for Infrastructure-as-Code (IaC)
-- **Template Specs** and **Deployment Stacks** as the successor to Azure Blueprints
-- **DevTest Lab** setup with hardened NSGs, Just-in-Time (JIT) access, and diagnostics
-- **Solidity + Hardhat** based Smart Contract CI/CD pipeline
-- **GitHub Codespaces** for seamless development in-browser
-
-> ⚠️ _The `parameters/` directory is excluded to encourage cloning this repo and supplying your own environment-specific configurations._
+[![Landing Zone CI](https://img.shields.io/github/actions/workflow/status/YourOrg/YourRepo/landing-zone-ci.yml?branch=main)](https://github.com/YourOrg/YourRepo/actions/workflows/landing-zone-ci.yml) [![Smart Contract CI/CD](https://img.shields.io/github/actions/workflow/status/YourOrg/YourRepo/hardhat-ci.yml?branch=main)](https://github.com/YourOrg/YourRepo/actions/workflows/hardhat-ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE.md)
 
 ---
 
-## 📦 Features
-
-- **Modular Azure Landing Zone**: Deploy a secure, production-ready foundation across VNet, NSG, JIT, diagnostics, policy, and RBAC modules.
-- **Smart Contract CI/CD**: Build and test Solidity contracts using Hardhat and GitHub Actions.
-- **GitHub Codespaces Ready**: Jump straight into development without setup.
-- **Cloud-Native Automation**: Use GitHub Actions, Azure CLI, and PowerShell scripts for hands-free deployment and security hardening.
+> **💡 Quick Overview**
+>
+> This repo delivers an **Enterprise-Scale Azure Landing Zone** with built-in governance, plus a **DevTest Lab** setup for secure VM-based smart contract development and **Full CI/CD** for Solidity contracts via GitHub Actions.
 
 ---
 
-## 📁 Repository Structure
+## 📖 Table of Contents
 
-| Path                          | Description |
-|-------------------------------|-------------|
-| `.github/workflows/`         | CI/CD pipelines for infrastructure and smart contracts |
-| `bicep/`                      | Core Bicep modules (network, NSG, policy, JIT, diagnostics, etc.) |
-| `powershell/`                | Automation scripts for NSG, diagnostics, and JIT |
-| `smart-contracts/`           | Solidity smart contract project with Hardhat, tests, and configs |
-| `wiki/`                       | Markdown files for GitHub Wiki docs |
-| `images/`                     | Architecture and CI pipeline diagrams |
-| `.devcontainer/`             | GitHub Codespaces container definition |
-| `.gitignore` & `LICENSE.md` | Project metadata |
-
-> ❌ `parameters/` is **not** included. You are expected to clone this repo and supply your own `parameters/landing-zone-parameters.json` and `devtest-vm.parameters.json`.
-
----
-
-## 🚀 Getting Started with GitHub Codespaces
-
-This repository is Codespaces-ready! To use:
-
-1. Click the **Code** dropdown in GitHub
-2. Select **Open with Codespaces**
-3. GitHub provisions a preconfigured dev container with all required tools installed:
-   - Node.js
-   - Hardhat
-   - Bicep CLI
-   - Azure CLI
+1. [About](#about)
+2. [Key Features](#key-features)
+3. [Architecture](#architecture)
+4. [Prerequisites](#prerequisites)
+5. [Getting Started](#getting-started)
+6. [Repo Layout](#repo-layout)
+7. [Deploy Landing Zone](#deploy-landing-zone)
+8. [Provision DevTest Lab](#provision-devtest-lab)
+9. [Smart Contract Workflow](#smart-contract-workflow)
+10. [CI/CD Pipelines](#ci-cd-pipelines)
+11. [Contributing](#contributing)
+12. [License & Support](#license--support)
 
 ---
 
-## 🔁 Use Cases
+## 🎯 About
 
-- ✅ **Enterprise Landing Zone** with Azure-native governance
-- ✅ **DevTest Lab Setup** for secure development and testing
-- ✅ **Blockchain Prototype** with Smart Contract CI/CD
-- ✅ **Educational Tool** for learning Bicep, Template Specs, and secure DevOps
+A turnkey foundation combining Azure best practices with a hardened DevTest Lab environment, plus a developer-friendly pipeline for writing, testing, and deploying Solidity contracts.
 
 ---
 
-## 🛡️ Security Hardening
+## ✨ Key Features
 
-This repo supports:
-
-- 🔐 NSG Rules with restricted access
-- 🕒 Just-in-Time (JIT) access via Azure Security Center
-- 📊 VM diagnostics integration with Log Analytics
-- 🎯 Role-based access control (RBAC) via Bicep
-
----
-
-## 🧪 Smart Contract CI/CD Pipeline
-
-- ✅ Written in **Solidity**
-- ✅ Tested with **Mocha** via **Hardhat**
-- ✅ Automated with **GitHub Actions**
-- ✅ Configurable `.env` for deployment credentials
+|         Domain | Technology                      | Highlights                                  |
+| -------------: | ------------------------------- | ------------------------------------------- |
+|      **Infra** | Bicep, Azure CLI                | Modular templates, **RBAC**, NSGs, JIT      |
+| **Governance** | Azure Policy, Management Groups | Security baselines, cost controls           |
+|    **DevTest** | DevTest Labs, ARM/Bicep         | Secure VMs, artifacts, auto-shutdown        |
+| **Blockchain** | Hardhat, Mocha/Chai             | Local testing, coverage reports             |
+|      **CI/CD** | GitHub Actions                  | Multi-stage pipelines for infra & contracts |
 
 ---
 
-## 📄 License
+## 🏗 Architecture
 
-This project is licensed under the terms of the [MIT License](./LICENSE.md). You are free to fork, modify, and adapt this repo for your own use.
+![Landing Zone & CI/CD Workflow](diagrams/LandingZoneArchitecture.png)
 
----
-
-## 💡 Contribute
-
-Contributions are welcome to improve or extend this project. Please fork the repository and submit a pull request.
+> A high-level workflow showing how Bicep modules, DevTest Lab, and GitHub Actions integrate for end-to-end automation.
 
 ---
 
-## 🔗 Learn More
+## 🔧 Prerequisites
 
-Refer to the `wiki/` directory or GitHub Wiki for deep dives into:
-- [Landing Zone Architecture](wiki/landing-zone-overview.md)
-- [Programmatic Deployment](wiki/programmatic-deployment.md)
-- [DevTest Lab Security](wiki/devtest-lab-security.md)
-- [Smart Contract CI/CD](wiki/smart-contracts-ci-cd.md)
+* **Azure Subscription** (Owner)
+* **Azure CLI** ≥ 2.40.0
+* **Bicep CLI**
+* **Node.js** ≥ 16.x & **npm**
+* **GitHub PAT** with `repo` & `workflow` scopes
 
+---
+
+## 🚀 Getting Started
+
+<details>
+<summary>1. Clone Repository</summary>
+
+```bash
+git clone https://github.com/YourOrg/YourRepo.git
+cd YourRepo
+```
+
+</details>
+
+<details>
+<summary>2. Azure Login & Subscription</summary>
+
+```bash
+az login
+az account set --subscription <SUBSCRIPTION_ID>
+```
+
+</details>
+
+<details>
+<summary>3. Deploy Landing Zone</summary>
+
+```bash
+az deployment sub create \
+  --location eastus \
+  --template-file bicep/landing-zone.bicep \
+  --parameters @bicep/parameters/landing-zone-parameters.json
+```
+
+</details>
+
+<details>
+<summary>4. Provision DevTest Lab VM</summary>
+
+```bash
+az deployment group create \
+  --resource-group DevTestLabRG \
+  --template-file devtest-lab/devtest-lab.bicep \
+  --parameters @devtest-lab/parameters/devtest-vm.parameters.json
+```
+
+</details>
+
+<details>
+<summary>5. Smart Contract Dev & Test</summary>
+
+```bash
+cd smart-contracts
+npm install
+npx hardhat compile
+npx hardhat test
+```
+
+</details>
+
+<details>
+<summary>6. Manual Deploy Contracts</summary>
+
+```bash
+npx hardhat run scripts/deploy.js --network <network>
+```
+
+</details>
+
+---
+
+## 📂 Repo Layout
+
+```text
+├── .github/workflows/      # GitHub Actions
+├── bicep/                  # Landing Zone modules
+├── devtest-lab/            # DevTest Lab templates & scripts
+├── smart-contracts/        # Solidity, tests, configs
+├── docs/                   # Additional guides
+├── diagrams/               # Visio/PNG architecture diagrams
+├── scripts/                # Automation & helper scripts
+├── wiki/                   # Markdown stubs for GitHub Wiki
+├── LICENSE.md
+└── README.md
+```
+
+---
+
+## ⚙️ Deploy Landing Zone
+
+Deep dive into Bicep modules, parameterization, and security controls in \[wiki/landing-zone-overview\.md].
+
+---
+
+## 🖥 Provision DevTest Lab
+
+Secure VM provisioning, artifact management, and auto-shutdown strategies in \[wiki/devtest-lab-security.md].
+
+---
+
+## 📜 Smart Contract Workflow
+
+Hardhat setup, test strategy, and deployment steps documented in \[wiki/smart-contracts-ci-cd.md].
+
+---
+
+## 🔄 CI/CD Pipelines
+
+Multi-stage GitHub Actions: infra (landing-zone-ci.yml) & blockchain (hardhat-ci.yml). Full docs in \[wiki/ci-cd-overview\.md].
+
+---
+
+## 🤝 Contributing
+
+We love contributions! Please ensure you:
+
+1. Fork the repo
+2. Follow **conventional commits**
+3. Run & pass existing tests
+4. Submit a PR with clear description
+
+See \[CODE\_OF\_CONDUCT.md] for guidelines.
+
+---
+
+## 📜 License & Support
+
+Licensed under MIT. Open an issue or contact @YourGitHubHandle for help.
+
+---
+
+# 📚 GitHub Wiki Structure
+
+Below are the primary wiki pages; each has an intro stub in `/wiki`:
+
+* **Home** (`Home.md`): Project elevator pitch & navigation
+* **Landing Zone Overview** (`landing-zone-overview.md`)
+* **Programmatic Deployment** (`programmatic-deployment.md`)
+* **DevTest Lab Security** (`devtest-lab-security.md`)
+* **Smart Contracts CI/CD** (`smart-contracts-ci-cd.md`)
+* **CI/CD Overview** (`ci-cd-overview.md`)
+* **Troubleshooting** (`troubleshooting.md`)
+* **FAQ** (`faq.md`)
+
+*Feel free to suggest more styling touches or additional sections!*
