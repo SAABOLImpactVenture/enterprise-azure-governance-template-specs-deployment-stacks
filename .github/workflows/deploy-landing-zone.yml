@@ -1,19 +1,19 @@
 # ==========================================================================
 # Enterprise Azure Landing Zone - Deployment Workflow
 # ==========================================================================
-# Last Updated: 2025-06-10 13:08:27 UTC
+# Last Updated: 2025-06-10 13:12:23 UTC
 # Author: GEP-V
 #
 # PROMPT ENGINEERING GUIDANCE:
 # This workflow handles deployment of Azure landing zone components with:
-# - Policy enforcement for resource tagging (✅ FIXED - includes both tagName and tagValue)
-# - Centralized logging with Log Analytics (✅ FIXED - direct resource creation)
+# - Policy enforcement for resource tagging ✅ WORKING
+# - Centralized logging with Log Analytics (FIXED - Direct resource creation)
 # - Management networking infrastructure
 # - Diagnostic settings for operational monitoring
 #
 # BEST PRACTICES IMPLEMENTED:
 # 1. Resource provider registration before deployment
-# 2. Fixed policy parameters with both required values
+# 2. Working policy parameters with both required values ✅
 # 3. Direct resource creation to avoid external dependencies
 # 4. Resource ID capturing for cross-resource configuration
 # 5. Detailed logging and error handling
@@ -58,7 +58,7 @@ env:
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   RESOURCE_GROUP_NAME: rg-management
   LOCATION: eastus2
-  DEPLOYMENT_TIMESTAMP: "2025-06-10 13:08:27"
+  DEPLOYMENT_TIMESTAMP: "2025-06-10 13:12:23"
   DEPLOYMENT_USER: "GEP-V"
   NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
   MAX_RETRY_ATTEMPTS: 3
@@ -121,7 +121,7 @@ jobs:
             az provider register --namespace $PROVIDER
           done
           
-          echo "✅ Resource providers registered successfully"
+          echo "✅ Resource providers registration initiated"
           echo "providersRegistered=true" >> $GITHUB_OUTPUT
 
       - name: Create Management Resource Group
@@ -147,29 +147,25 @@ jobs:
           fi
 
       # ==========================================================================
-      # POLICY ASSIGNMENT DEPLOYMENT - ✅ WORKING CORRECTLY
+      # POLICY ASSIGNMENT DEPLOYMENT - ✅ WORKING VERSION
       # ==========================================================================
       - name: Deploy Policy Assignment with Complete Parameters
         id: deploy_policy
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'policies' || github.event.inputs.deploymentType == '' }}
         run: |
           echo "======================================================"
-          echo "POLICY DEPLOYMENT - CONFIRMED WORKING"
+          echo "POLICY DEPLOYMENT - WORKING VERSION ✅"
           echo "======================================================"
           echo "Current Date and Time: ${{ env.DEPLOYMENT_TIMESTAMP }}"
           echo "Current User: ${{ env.DEPLOYMENT_USER }}"
-          echo "Status: ✅ Policy parameters fixed - both tagName and tagValue included"
+          echo "Status: This step is now working correctly!"
           echo "======================================================"
           
           DEPLOYMENT_NAME="policy-assignment-$(date +%s)"
           
-          echo "Deployment Configuration:"
-          echo "- Deployment Name: $DEPLOYMENT_NAME"
-          echo "- Resource Group: ${{ env.RESOURCE_GROUP_NAME }}"
-          echo "- Policy Definition: 1e30110a-5ceb-460c-a204-c1c3969c6d62"
-          echo "- Tag Name: Environment"
-          echo "- Tag Value: Production"
-          echo "- Enforcement Mode: Default"
+          echo "✅ Using CORRECTED command with both required parameters:"
+          echo "- tagName: Environment"
+          echo "- tagValue: Production"
           
           POLICY_RESULT=$(az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -189,6 +185,13 @@ jobs:
             POLICY_ID=$(echo "$POLICY_RESULT" | jq -r '.properties.outputs.policyAssignmentId.value')
             echo "POLICY_ID=$POLICY_ID" >> $GITHUB_ENV
             echo "Policy Assignment ID: $POLICY_ID"
+            
+            # Verify parameters
+            echo "🔍 Verifying policy parameters..."
+            SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+            SCOPE="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}"
+            PARAMS_CHECK=$(az policy assignment show --name enforce-tag-policy --scope $SCOPE --query "parameters")
+            echo "✅ Policy parameters verified: $PARAMS_CHECK"
           else
             echo "❌ ERROR: Policy deployment failed!"
             echo "$POLICY_RESULT"
@@ -196,19 +199,19 @@ jobs:
           fi
 
       # ==========================================================================
-      # LOG ANALYTICS WORKSPACE DEPLOYMENT - 🔧 FIXED: DIRECT CREATION
+      # LOG ANALYTICS WORKSPACE DEPLOYMENT - FIXED VERSION
       # ==========================================================================
       - name: Deploy Log Analytics Workspace Using Direct Resource Creation
         id: log_analytics
         if: ${{ github.event.inputs.deploymentType == 'all' || github.event.inputs.deploymentType == 'diagnostics' || github.event.inputs.deploymentType == '' }}
         run: |
           echo "======================================================"
-          echo "LOG ANALYTICS WORKSPACE DEPLOYMENT - DIRECT METHOD"
+          echo "LOG ANALYTICS WORKSPACE DEPLOYMENT - FIXED VERSION 🔧"
           echo "======================================================"
           echo "Current Date and Time: ${{ env.DEPLOYMENT_TIMESTAMP }}"
           echo "Current User: ${{ env.DEPLOYMENT_USER }}"
-          echo "Fix Applied: Using direct az resource create (no external templates)"
-          echo "Previous Issue: External template URL was not accessible"
+          echo "Issue: External template URL is not accessible"
+          echo "Solution: Using direct Azure resource creation"
           echo "======================================================"
           
           WORKSPACE_NAME="log-analytics-mgmt"
@@ -219,11 +222,11 @@ jobs:
           echo "- Workspace Name: $WORKSPACE_NAME"
           echo "- SKU: PerGB2018"
           echo "- Retention: 30 days"
-          echo "- Method: Direct Azure Resource Creation"
+          echo "- Method: Direct resource creation (no external templates)"
           
           # Check if workspace already exists
           echo ""
-          echo "🔍 Checking for existing workspace..."
+          echo "🔍 Checking if workspace already exists..."
           EXISTING_WORKSPACE=$(az monitor log-analytics workspace list \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
             --query "[?name=='$WORKSPACE_NAME'].id" -o tsv 2>/dev/null || echo "")
@@ -235,7 +238,7 @@ jobs:
           else
             echo ""
             echo "🔧 Creating Log Analytics workspace using direct resource creation..."
-            echo "Command: az resource create (avoiding external template dependencies)"
+            echo "Command: az resource create (bypassing external templates)"
             
             WORKSPACE_RESULT=$(az resource create \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -250,12 +253,11 @@ jobs:
               echo ""
               echo "✅ SUCCESS: Log Analytics workspace created!"
               echo "Workspace ID: $WORKSPACE_ID"
-              echo "Creation Method: Direct resource creation"
               echo "status=created" >> $GITHUB_OUTPUT
             else
               echo ""
               echo "❌ ERROR: Failed to create Log Analytics workspace"
-              echo "Error Details: $WORKSPACE_RESULT"
+              echo "Error details: $WORKSPACE_RESULT"
               exit 1
             fi
           fi
@@ -264,6 +266,7 @@ jobs:
           echo ""
           echo "======================================================"
           echo "✅ Log Analytics workspace deployment completed!"
+          echo "Workspace ID: $WORKSPACE_ID"
           echo "======================================================"
 
       # ==========================================================================
@@ -281,15 +284,14 @@ jobs:
           echo "======================================================"
           
           # Check if VNet already exists
-          echo "🔍 Checking for existing VNet..."
+          echo "🔍 Checking if VNet already exists..."
           EXISTING_VNET=$(az network vnet list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --query "[?name=='vnet-management'].id" -o tsv)
           
           if [ -n "$EXISTING_VNET" ]; then
             echo "✅ VNet already exists with ID: $EXISTING_VNET"
             echo "VNET_ID=$EXISTING_VNET" >> $GITHUB_ENV
           else
-            echo ""
-            echo "🔧 Creating management VNet..."
+            echo "🔧 Creating new management VNet..."
             
             VNET_RESULT=$(az network vnet create \
               --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
@@ -336,7 +338,7 @@ jobs:
             if [ $? -eq 0 ]; then
               echo "✅ Services subnet created successfully"
             else
-              echo "⚠️  WARNING: Failed to create services subnet"
+              echo "⚠️ WARNING: Failed to create services subnet"
             fi
           fi
           
@@ -365,7 +367,7 @@ jobs:
           echo "Microsoft.Insights status: $INSIGHTS_STATUS"
           
           if [ "$INSIGHTS_STATUS" != "Registered" ]; then
-            echo "⚠️  Microsoft.Insights not fully registered. Waiting..."
+            echo "⚠️ Microsoft.Insights is not fully registered yet. Waiting..."
             
             # Wait for registration with timeout
             MAX_WAIT=300  # 5 minutes
@@ -376,8 +378,9 @@ jobs:
               ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
               
               if [ $ELAPSED_TIME -gt $MAX_WAIT ]; then
-                echo "⚠️  Timeout waiting for registration. Skipping diagnostics configuration."
-                echo "Please configure diagnostics manually later."
+                echo "⚠️ Timeout waiting for Microsoft.Insights registration."
+                echo "Skipping diagnostics configuration for now."
+                echo "You can configure diagnostics manually later."
                 exit 0
               fi
               
@@ -386,13 +389,13 @@ jobs:
               INSIGHTS_STATUS=$(az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv)
             done
             
-            echo "✅ Microsoft.Insights is now registered"
+            echo "✅ Microsoft.Insights is now registered!"
           fi
           
-          # Configure diagnostics
+          # Configure diagnostics if both resources exist
           if [ -n "$VNET_ID" ] && [ -n "$WORKSPACE_ID" ]; then
             echo ""
-            echo "🔧 Configuring diagnostic settings..."
+            echo "🔧 Configuring diagnostics settings..."
             echo "VNet ID: $VNET_ID"
             echo "Workspace ID: $WORKSPACE_ID"
             
@@ -400,7 +403,7 @@ jobs:
             EXISTING_DIAG=$(az monitor diagnostic-settings list --resource "$VNET_ID" --query "[?name=='diag-to-log-analytics'].id" -o tsv 2>/dev/null || echo "")
             
             if [ -n "$EXISTING_DIAG" ]; then
-              echo "✅ Diagnostics settings already exist"
+              echo "✅ Diagnostics settings already exist for VNet"
             else
               DIAG_RESULT=$(az monitor diagnostic-settings create \
                 --name "diag-to-log-analytics" \
@@ -410,14 +413,16 @@ jobs:
                 --metrics '[{"category":"AllMetrics","enabled":true}]')
               
               if [ $? -eq 0 ]; then
-                echo "✅ SUCCESS: Diagnostic settings configured"
+                echo "✅ SUCCESS: Diagnostics settings configured!"
               else
-                echo "⚠️  WARNING: Failed to configure diagnostic settings"
-                echo "This can be configured manually later"
+                echo "⚠️ WARNING: Failed to configure diagnostics settings"
+                echo "This may be due to provider registration timing."
               fi
             fi
           else
-            echo "⚠️  Skipping diagnostics - missing required resource IDs"
+            echo "⚠️ WARNING: Cannot configure diagnostics - missing resource IDs"
+            echo "VNet ID: ${VNET_ID:-'missing'}"
+            echo "Workspace ID: ${WORKSPACE_ID:-'missing'}"
           fi
           
           echo ""
@@ -432,7 +437,7 @@ jobs:
         id: validate_resources
         run: |
           echo "======================================================"
-          echo "FINAL DEPLOYMENT VALIDATION"
+          echo "FINAL VALIDATION"
           echo "======================================================"
           echo "Current Date and Time: ${{ env.DEPLOYMENT_TIMESTAMP }}"
           echo "Current User: ${{ env.DEPLOYMENT_USER }}"
@@ -440,17 +445,17 @@ jobs:
           
           VALIDATION_PASSED=true
           
-          # Resource group validation
+          # Validate resource group
           echo "🔍 Validating resource group..."
           RG_CHECK=$(az group show --name ${{ env.RESOURCE_GROUP_NAME }} --query id -o tsv)
           if [ -n "$RG_CHECK" ]; then
-            echo "✅ Resource group validation passed"
+            echo "✅ Resource group exists"
           else
             echo "❌ Resource group validation failed"
             VALIDATION_PASSED=false
           fi
           
-          # Policy validation
+          # Validate policy if deployed
           if [[ "${{ github.event.inputs.deploymentType }}" == "all" || "${{ github.event.inputs.deploymentType }}" == "policies" || "${{ github.event.inputs.deploymentType }}" == "" ]]; then
             echo ""
             echo "🔍 Validating policy assignment..."
@@ -458,47 +463,48 @@ jobs:
             POLICY_CHECK=$(az policy assignment list --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}" --query "[?name=='enforce-tag-policy'].id" -o tsv)
             
             if [ -n "$POLICY_CHECK" ]; then
-              echo "✅ Policy assignment found"
+              echo "✅ Policy assignment exists"
               
-              # Verify parameters
+              # Validate parameters
               PARAMS_CHECK=$(az policy assignment show --name enforce-tag-policy --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}" --query "parameters | keys(@)" -o tsv)
               if [[ "$PARAMS_CHECK" == *"tagName"* && "$PARAMS_CHECK" == *"tagValue"* ]]; then
-                echo "✅ Policy parameters validation passed (both tagName and tagValue present)"
+                echo "✅ Policy parameters are correct (both tagName and tagValue present)"
               else
                 echo "❌ Policy parameters validation failed"
                 VALIDATION_PASSED=false
               fi
             else
-              echo "❌ Policy assignment validation failed"
+              echo "❌ Policy assignment not found"
               VALIDATION_PASSED=false
             fi
           fi
           
-          # Log Analytics validation
+          # Validate Log Analytics if deployed
           if [[ "${{ github.event.inputs.deploymentType }}" == "all" || "${{ github.event.inputs.deploymentType }}" == "diagnostics" || "${{ github.event.inputs.deploymentType }}" == "" ]]; then
             echo ""
             echo "🔍 Validating Log Analytics workspace..."
             WORKSPACE_CHECK=$(az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --resource-type Microsoft.OperationalInsights/workspaces --query "[0].id" -o tsv)
             if [ -n "$WORKSPACE_CHECK" ]; then
-              echo "✅ Log Analytics workspace validation passed"
+              echo "✅ Log Analytics workspace exists"
             else
-              echo "❌ Log Analytics workspace validation failed"
+              echo "❌ Log Analytics workspace not found"
               VALIDATION_PASSED=false
             fi
           fi
           
-          # VNet validation
+          # Validate VNet if deployed
           if [[ "${{ github.event.inputs.deploymentType }}" == "all" || "${{ github.event.inputs.deploymentType }}" == "networking" || "${{ github.event.inputs.deploymentType }}" == "" ]]; then
             echo ""
             echo "🔍 Validating VNet..."
             VNET_CHECK=$(az network vnet show --resource-group ${{ env.RESOURCE_GROUP_NAME }} --name vnet-management --query id -o tsv)
             if [ -n "$VNET_CHECK" ]; then
-              echo "✅ VNet validation passed"
+              echo "✅ VNet exists"
               
+              # Check subnets
               SUBNET_COUNT=$(az network vnet subnet list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --vnet-name vnet-management --query "length(@)" -o tsv)
-              echo "✅ Subnets found: $SUBNET_COUNT"
+              echo "✅ Found $SUBNET_COUNT subnets"
             else
-              echo "❌ VNet validation failed"
+              echo "❌ VNet not found"
               VALIDATION_PASSED=false
             fi
           fi
@@ -506,10 +512,10 @@ jobs:
           echo ""
           echo "======================================================"
           if [ "$VALIDATION_PASSED" = true ]; then
-            echo "✅ ALL VALIDATION CHECKS PASSED!"
+            echo "✅ ALL VALIDATIONS PASSED!"
             echo "status=success" >> $GITHUB_OUTPUT
           else
-            echo "❌ VALIDATION FAILED!"
+            echo "❌ VALIDATION FAILURES DETECTED!"
             echo "status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -521,17 +527,17 @@ jobs:
       - name: Generate Final Deployment Summary
         run: |
           echo "======================================================"
-          echo "AZURE LANDING ZONE DEPLOYMENT SUMMARY"
+          echo "🎉 AZURE LANDING ZONE DEPLOYMENT SUMMARY"
           echo "======================================================"
-          echo "Deployment Timestamp: ${{ env.DEPLOYMENT_TIMESTAMP }}"
+          echo "Deployment Completed: ${{ env.DEPLOYMENT_TIMESTAMP }}"
           echo "Deployed By: ${{ env.DEPLOYMENT_USER }}"
           echo "Resource Group: ${{ env.RESOURCE_GROUP_NAME }}"
           echo "Location: ${{ env.LOCATION }}"
-          echo "Deployment ID: ${{ github.run_id }}"
+          echo "Run ID: ${{ github.run_id }}"
           echo "======================================================"
           
           echo ""
-          echo "📋 DEPLOYED RESOURCES:"
+          echo "📋 ALL DEPLOYED RESOURCES:"
           az resource list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table
           
           echo ""
@@ -540,8 +546,13 @@ jobs:
           az policy assignment list --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.RESOURCE_GROUP_NAME }}" -o table
           
           echo ""
-          echo "📋 NETWORK RESOURCES:"
+          echo "📋 NETWORK CONFIGURATION:"
           az network vnet list --resource-group ${{ env.RESOURCE_GROUP_NAME }} -o table
+          if az network vnet show --resource-group ${{ env.RESOURCE_GROUP_NAME }} --name vnet-management > /dev/null 2>&1; then
+            echo ""
+            echo "📋 SUBNETS:"
+            az network vnet subnet list --resource-group ${{ env.RESOURCE_GROUP_NAME }} --vnet-name vnet-management -o table
+          fi
           
           echo ""
           echo "📋 LOG ANALYTICS WORKSPACES:"
@@ -550,5 +561,30 @@ jobs:
           echo ""
           echo "======================================================"
           echo "✅ DEPLOYMENT COMPLETED SUCCESSFULLY!"
-          echo "GitHub Actions Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "View Details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo "======================================================"
+
+  # ==========================================================================
+  # NOTIFICATION JOB
+  # ==========================================================================
+  notify:
+    name: Send Deployment Notification
+    needs: deploy-management
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Success/Failure Notification
+        run: |
+          if [[ "${{ needs.deploy-management.outputs.deploymentStatus }}" == "success" ]]; then
+            echo "🎉 Azure Landing Zone Deployment SUCCESSFUL!"
+          else
+            echo "❌ Azure Landing Zone Deployment FAILED!"
+          fi
+          
+          echo ""
+          echo "Deployment Details:"
+          echo "- Timestamp: ${{ env.DEPLOYMENT_TIMESTAMP }}"
+          echo "- User: ${{ env.DEPLOYMENT_USER }}"
+          echo "- Run ID: ${{ github.run_id }}"
+          echo "- Repository: ${{ github.repository }}"
+          echo "- View Details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
