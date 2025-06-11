@@ -1,96 +1,59 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// === Prompt: Import GovernanceRegistry to link on-chain parameter store ===
 import "./GovernanceRegistry.sol";
+// === Prompt: Import and alias OZ’s AccessControl for battle-tested role logic ===
+import { AccessControl as OZAccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
-/**
- * @title AccessControl
- * @dev Contract for managing role-based access control in the enterprise solution.
- */
-contract AccessControl {
-    // Reference to the governance registry
+/// @title AccessControl
+/// @dev Inherits from OpenZeppelin’s AccessControl to manage roles, with integration to our GovernanceRegistry.
+contract AccessControl is OZAccessControl {
+    // === Prompt: Expose the linked governance registry for on-chain parameter checks ===
     GovernanceRegistry public governanceRegistry;
     
-    // Role definitions
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    // === Prompt: Define our enterprise roles ===
+    bytes32 public constant ADMIN_ROLE    = keccak256("ADMIN_ROLE");
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
-    bytes32 public constant AUDITOR_ROLE = keccak256("AUDITOR_ROLE");
+    bytes32 public constant AUDITOR_ROLE  = keccak256("AUDITOR_ROLE");
     
-    // Mapping of role assignments
-    mapping(bytes32 => mapping(address => bool)) private roles;
-    
-    // Events
-    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
-    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
-    
-    /**
-     * @dev Constructor sets the governance registry address and assigns admin role to sender
-     * @param _governanceRegistry Address of the governance registry
-     */
+    /// @dev Constructor sets the governance registry and bootstraps ADMIN_ROLE  
+    /// @prompt Assign ADMIN_ROLE to deployer; configure role hierarchy
     constructor(address _governanceRegistry) {
         require(_governanceRegistry != address(0), "AccessControl: governance registry is zero address");
         governanceRegistry = GovernanceRegistry(_governanceRegistry);
-        _grantRole(ADMIN_ROLE, msg.sender);
+        
+        // === Prompt: Grant the deployer ADMIN_ROLE and make it the admin of all roles ===
+        _setupRole(ADMIN_ROLE, msg.sender);
+        _setRoleAdmin(ADMIN_ROLE,    ADMIN_ROLE);
+        _setRoleAdmin(OPERATOR_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(AUDITOR_ROLE,  ADMIN_ROLE);
     }
     
-    /**
-     * @dev Modifier to restrict function access to role holders
-     * @param role The role required
-     */
-    modifier onlyRole(bytes32 role) {
-        require(hasRole(role, msg.sender), "AccessControl: caller does not have the required role");
-        _;
+    /// @notice Grants a specific role to an account  
+    /// @dev Only callable by ADMIN_ROLE; delegates to OZ’s logic  
+    /// @prompt Ensure only ADMIN_ROLE can call, and emit standard OZ events
+    function grantRole(bytes32 role, address account)
+        public
+        override
+        onlyRole(ADMIN_ROLE)
+    {
+        super.grantRole(role, account);
     }
     
-    /**
-     * @dev Grants a role to an account
-     * @param role The role being granted
-     * @param account The account receiving the role
-     */
-    function grantRole(bytes32 role, address account) public onlyRole(ADMIN_ROLE) {
-        _grantRole(role, account);
+    /// @notice Revokes a specific role from an account  
+    /// @dev Only callable by ADMIN_ROLE; delegates to OZ’s logic  
+    /// @prompt Mirror grantRole pattern for revoking with correct access check
+    function revokeRole(bytes32 role, address account)
+        public
+        override
+        onlyRole(ADMIN_ROLE)
+    {
+        super.revokeRole(role, account);
     }
     
-    /**
-     * @dev Revokes a role from an account
-     * @param role The role being revoked
-     * @param account The account losing the role
-     */
-    function revokeRole(bytes32 role, address account) public onlyRole(ADMIN_ROLE) {
-        _revokeRole(role, account);
-    }
+    /// @dev `hasRole` and all internal mappings/events are inherited from OZAccessControl  
+    /// @prompt No custom mapping needed—rely on well-tested base implementation
     
-    /**
-     * @dev Checks if an account has a specific role
-     * @param role The role to check
-     * @param account The account to check
-     * @return True if the account has the role
-     */
-    function hasRole(bytes32 role, address account) public view returns (bool) {
-        return roles[role][account];
-    }
-    
-    /**
-     * @dev Internal function to grant a role
-     * @param role The role to grant
-     * @param account The account receiving the role
-     */
-    function _grantRole(bytes32 role, address account) private {
-        if (!hasRole(role, account)) {
-            roles[role][account] = true;
-            emit RoleGranted(role, account, msg.sender);
-        }
-    }
-    
-    /**
-     * @dev Internal function to revoke a role
-     * @param role The role to revoke
-     * @param account The account losing the role
-     */
-    function _revokeRole(bytes32 role, address account) private {
-        if (hasRole(role, account)) {
-            roles[role][account] = false;
-            emit RoleRevoked(role, account, msg.sender);
-        }
-    }
+    // (no custom _grantRole/_revokeRole functions—OZ provides them)
 }
