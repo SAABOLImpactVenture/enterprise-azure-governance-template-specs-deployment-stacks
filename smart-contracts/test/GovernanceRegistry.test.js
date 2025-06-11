@@ -1,15 +1,14 @@
 const { expect } = require("chai");
-const { ethers }  = require("hardhat");
+const { ethers } = require("hardhat");
 
 describe("GovernanceRegistry", function () {
-  let Registry, registry;
+  let registry;
   let owner, addr1, addr2;
 
   beforeEach(async () => {
     [owner, addr1, addr2] = await ethers.getSigners();
-    Registry = await ethers.getContractFactory("GovernanceRegistry");
+    const Registry = await ethers.getContractFactory("GovernanceRegistry");
     registry = await Registry.connect(owner).deploy();
-    await registry.deployed();
   });
 
   it("should set deployer as owner and authorize them", async () => {
@@ -44,18 +43,16 @@ describe("GovernanceRegistry", function () {
   });
 
   it("only authorized entity can set parameters", async () => {
-    const key   = ethers.utils.id("some_key");
+    const key   = ethers.id("some_key");
     const value = "some_value";
 
-    // addr1 not yet authorized → should revert
+    // Should revert before authorization
     await expect(
       registry.connect(addr1).setParameter(key, value)
     ).to.be.revertedWith("GovernanceRegistry: caller is not authorized");
 
-    // authorize addr1
+    // Authorize and retry
     await registry.connect(owner).setEntityAuthorization(addr1.address, true);
-
-    // now it works
     await expect(registry.connect(addr1).setParameter(key, value))
       .to.emit(registry, "ParameterSet")
       .withArgs(key, value);
@@ -64,7 +61,7 @@ describe("GovernanceRegistry", function () {
   });
 
   it("getParameter returns empty string for unset key", async () => {
-    const key = ethers.utils.id("unset_key");
+    const key = ethers.id("unset_key");
     expect(await registry.getParameter(key)).to.equal("");
   });
 });
