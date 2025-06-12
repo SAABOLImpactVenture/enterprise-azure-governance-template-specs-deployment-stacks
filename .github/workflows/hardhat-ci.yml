@@ -4,7 +4,7 @@ name: Hardhat CI
 on:
   push:
     paths:
-      - 'smart-contracts/**'
+      - 'smart-contracts/scripts/**'
 
 jobs:
   compile-test-deploy:

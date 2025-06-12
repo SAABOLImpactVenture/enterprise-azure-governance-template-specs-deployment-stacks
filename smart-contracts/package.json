@@ -7,7 +7,7 @@
     "test": "hardhat test",
     "compile": "hardhat compile",
     "deploy": "node scripts/deploy.js",
-    "deploy:testnet": "hardhat run smart-contracts/scripts/deploy.js --network goerli"
+    "deploy:testnet": "hardhat run scripts/deploy.js --network goerli"
   },
   "keywords": [
     "ethereum",
