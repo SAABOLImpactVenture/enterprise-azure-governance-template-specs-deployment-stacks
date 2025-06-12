@@ -1,0 +1,33 @@
+name: Deploy Blockchain DevTestLab Environment
+
+on:
+  push:
+    paths:
+      - 'devtest-lab/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Validate Bicep template
+        run: |
+          az deployment group validate \
+            --resource-group ${{ secrets.DEVTEST_LAB_RG }} \
+            --template-file devtest-lab/blockchain-devtestlab-environment.bicep \
+            --parameters @devtest-lab/parameters/blockchain-env.parameters.json
+
+      - name: Deploy environment
+        run: |
+          az deployment group create \
+            --resource-group ${{ secrets.DEVTEST_LAB_RG }} \
+            --template-file devtest-lab/blockchain-devtestlab-environment.bicep \
+            --parameters @devtest-lab/parameters/blockchain-env.parameters.json
