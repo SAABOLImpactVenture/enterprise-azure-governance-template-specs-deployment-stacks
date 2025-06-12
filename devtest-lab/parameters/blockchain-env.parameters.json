@@ -1,0 +1,12 @@
+// devtest-lab/parameters/blockchain-env.parameters.json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "labName":      { "value": "YOUR_DEVTEST_LAB_NAME" },
+    "labRg":        { "value": "YOUR_DEVTEST_LAB_RESOURCE_GROUP" },
+    "location":     { "value": "eastus" },
+    "hubVnetId":    { "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-network/providers/Microsoft.Network/virtualNetworks/hub-vnet" },
+    "keyVaultName": { "value": "dev-blockchain-kv-eastus" }
+  }
+}
