@@ -4,7 +4,7 @@ name: Hardhat CI
 on:
   push:
     paths:
-      - 'smart-contracts/scripts/**'
+      - 'smart-contracts/**'
 
 jobs:
   compile-test-deploy:
@@ -30,5 +30,5 @@ jobs:
       - name: Deploy contracts via Azure (optional)
         if: success()
         run: |
-          node deploy.js
+          node scripts/deploy.js
         working-directory: smart-contracts
