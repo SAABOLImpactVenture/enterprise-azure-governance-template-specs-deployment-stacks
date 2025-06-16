@@ -3,7 +3,7 @@
 ---
 
 > **💡 Quick Overview**  
-> This repo delivers an **Enterprise-Scale Azure Landing Zone** with built-in governance, plus a **DevTest Lab** sandbox for secure VM-based smart-contract development—including an **IBFT-based Besu network**—and **Full CI/CD** for Solidity contracts via GitHub Actions.
+> This repo delivers a complete **Enterprise-Scale Azure Landing Zone** with built-in governance, plus a hardened **DevTest Lab** sandbox that now includes an **IBFT-consensus Hyperledger Besu network** for integration testing, and **Full CI/CD** for Solidity contracts via GitHub Actions.
 
 ---
 
@@ -20,7 +20,7 @@
 9. [Provision DevTest Lab](#provision-devtest-lab)  
    - 9.1 [Core DevTest Lab](#core-devtest-lab)  
    - 9.2 [Blockchain DevTest Lab Environment](#blockchain-devtest-lab-environment)  
-10. [Smart Contract Workflow](#smart-contract-workflow)  
+10. [Smart-Contract Workflow](#smart-contract-workflow)  
 11. [CI/CD Pipelines](#ci-cd-pipelines)  
 12. [Contributing](#contributing)  
 13. [License & Support](#license--support)  
@@ -30,100 +30,62 @@
 
 ## 🎯 About
 
-A turnkey foundation combining Azure best practices with a hardened DevTest Lab environment, plus a developer-friendly pipeline for writing, testing, and deploying Solidity contracts.
+This repository combines:
+
+- **Enterprise-Scale Landing Zone**: Azure Management Groups, Policies, RBAC, networking, monitoring.  
+- **DevTest Lab Sandbox**: secure VMs, Just-In-Time access, nightly auto-shutdown.  
+- **IBFT-Based Hyperledger Besu Network**: 4 validator nodes, 2 RPC/API nodes, 2 bootnodes (private & public) for realistic integration testing.  
+- **Smart-Contract Framework**: Solidity contracts with OpenZeppelin, NatSpec, Mocha/Chai testing.  
+- **CI/CD**: GitHub Actions for Bicep deployments and smart-contract pipelines.
 
 ---
 
 ## 🎯 Product Vision & Roadmap
 
 **Vision:**  
-Enable secure, governed blockchain development on Azure—providing teams with an enterprise-grade landing zone, a hardened DevTest Lab sandbox, and a streamlined CI/CD pipeline for Solidity contracts—so that developers can move from “code” to “chain” with confidence and compliance.
+Enable end-to-end, governed blockchain development on Azure—from infrastructure provisioning to contract deployment—using a repeatable IBFT Besu test network.
 
 ### Epics & Goals
 
-| Epic                                 | Goal                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| **EPIC 1: Enterprise Foundation**    | Stand up Azure management groups, policies, subscriptions, and core services to enforce compliance and cost controls. |
-| **EPIC 2: DevTest Lab Sandbox**      | Provision an isolated sandbox subscription with DevTest Lab VMs, artifacts, JIT access, and auto-shutdown.            |
-| **EPIC 3: Smart-Contract Framework** | Build and harden Solidity contracts (access control, governance registry) with OpenZeppelin, tests, and docs.         |
-| **EPIC 4: CI/CD Automation**         | Create GitHub Actions pipelines for infrastructure deployment and contract compilation/testing/deployment.            |
-
-### Key Features & User Stories
-
-* **Feature 1.1: Management Group Hierarchy**  
-  *As a cloud architect, I want a clear Management-Group → Subscription design so that environments (Prod, Sandbox, Dev) inherit policies automatically.*
-
-* **Feature 1.2: Azure Policy & RBAC Baselines**  
-  *As a security lead, I need guardrails (policy assignments, resource locks) so engineers can’t spin up non-compliant resources.*
-
-* **Feature 2.1: DevTest Lab VM Templates**  
-  *As a blockchain developer, I want a pre-configured VM template (Node.js, Hardhat, Azure CLI) so I can start coding immediately.*
-
-* **Feature 2.2: Just-In-Time Access & Auto-Shutdown**  
-  *As an ops engineer, I need JIT RDP/SSH and nightly auto-shutdown so we minimize attack surface and costs.*
-
-* **Feature 3.1: Role-Based Access Control Contract**  
-  *As a governance admin, I want to grant/revoke roles on-chain so I can manage permissions dynamically.*
-
-* **Feature 3.2: Governance Registry Contract**  
-  *As a protocol owner, I want to store key-value parameters on-chain with event logs so downstream services can react to changes.*
-
-* **Feature 3.3: OpenZeppelin Integration & NatSpec**  
-  *As a developer, I want standardized, audited libraries and inline docs so my contracts are secure and self-documenting.*
-
-* **Feature 4.1: Infra Pipeline**  
-  *As an SRE, I want a pipeline that validates and deploys Bicep modules to Dev, Sandbox, and Prod so infrastructure is versioned and reproducible.*
-
-* **Feature 4.2: Smart-Contract Pipeline**  
-  *As a blockchain developer, I want a pipeline that compiles, tests, measures coverage, and (optionally) deploys my contracts so every commit is verified.*
-
-### High-Level Roadmap
-
-| Sprint       | Objectives                                                       | Deliverables                                                |
-| ------------ | ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| **Sprint 0** | Prep & Planning: finalize backlog, branch strategy, environments | Product brief, backlog in GH Issues, feature branch created |
-| **Sprint 1** | Complete EPIC 1: Foundation core                                 | Management Groups + Policies deployed, docs updated         |
-| **Sprint 2** | Kick off EPIC 2: DevTest Lab sandbox                             | DevTest Lab subscription + VM templates live                |
-| **Sprint 3** | Begin EPIC 3: Contract scaffolding                               | AccessControl & GovernanceRegistry stubs merged             |
-| **Sprint 4** | Continue EPIC 3 & add tests, NatSpec                             | Contracts fully implemented, test suite passing             |
-| **Sprint 5** | Launch EPIC 4 pipelines                                          | GH Actions workflows green end-to-end                       |
-| **Sprint 6** | Polish, docs, and hand-off                                       | Wiki complete, DevTest lab live, ready for dev              |
-
-**Next Actions:**
-
-1. Finalize backlog & branch: create `feature/migrate-openzeppelin` and log Issues.  
-2. Kick off Smart-Contract Epics: start AccessControl migration and test development.  
-3. Document Progress: update Wiki under **Smart Contracts CI/CD** with NatSpec and testing instructions.
+| Epic                                      | Goal                                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **EPIC 1: Enterprise Foundation**         | Stand up Azure management groups, policies, subscriptions, and core services to enforce compliance and cost controls.      |
+| **EPIC 2: DevTest Lab Sandbox**           | Provision an isolated sandbox subscription with DevTest Lab VMs, artifacts, JIT access, and auto-shutdown.                 |
+| **EPIC 3: Smart-Contract Framework**      | Build and harden Solidity contracts (access control, governance registry) with OpenZeppelin, tests, and docs.              |
+| **EPIC 4: CI/CD Automation**              | Create GitHub Actions pipelines for infrastructure deployment and contract compilation/testing/deployment.                 |
+| **EPIC 5: Blockchain Sandbox Infra**      | Deploy and configure an IBFT-consensus Hyperledger Besu network in DevTest Lab—including 4 validators, 2 RPC/API nodes, and 2 bootnodes—for realistic integration tests. |
+| **EPIC 6: Contract Integration Testing**  | Integrate Hardhat CI against the live Besu network, automating end-to-end smart-contract tests (unit, integration, governance flows). |
 
 ---
 
 ## ✨ Key Features
 
-| Domain         | Technology                      | Highlights                                  |
-| -------------- | ------------------------------- | ------------------------------------------- |
-| **Infra**      | Bicep, Azure CLI                | Modular templates, **RBAC**, NSGs, JIT      |
-| **Governance** | Azure Policy, Management Groups | Security baselines, cost controls           |
-| **DevTest**    | DevTest Labs, ARM/Bicep         | Secure VMs, artifacts, auto-shutdown        |
-| **Blockchain** | Hardhat, Mocha/Chai             | Local testing, coverage reports             |
-| **CI/CD**      | GitHub Actions                  | Multi-stage pipelines for infra & contracts |
+| Domain             | Technology                       | Highlights                                                                                       |
+| ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Infra**          | Azure Bicep, CLI                 | Management Groups, Policies, NSGs, Hub-Spoke networking                                          |
+| **Governance**     | Azure Policy, RBAC               | Enforce VM SKUs, tag compliance, resource locks                                                  |
+| **DevTest**        | Azure DevTest Labs, Artifacts    | Secure VM formulas, `install-besu.sh`, JIT, auto-shutdown                                        |
+| **Blockchain**     | Hyperledger Besu, IBFT Consensus | 4 validators, 2 RPC/API nodes, 2 bootnodes; custom `genesis.json` (Chain ID, Difficulty, GasLimit, Alloc, IBFT config) |
+| **SmartContracts** | Hardhat, OpenZeppelin, Mocha     | Local & network tests, coverage reports, NatSpec documentation                                   |
+| **CI/CD**          | GitHub Actions                   | Multi-stage workflows: landing-zone, DevTest-lab env, smart-contract pipeline                     |
 
 ---
 
 ## 🏗 Architecture
 
-![Landing Zone & CI/CD Workflow](diagrams/LandingZoneArchitecture.png)
+![Landing Zone & DevTest Lab Blockchain](diagrams/LandingZoneBlockchain.png)
 
-> A high-level workflow showing how Bicep modules, DevTest Lab, and GitHub Actions integrate for end-to-end automation.
+> **Figure:** Enterprise-Scale Landing Zone feeding into a DevTest Lab that hosts an IBFT Hyperledger Besu network for contract integration tests.
 
 ---
 
 ## 🔧 Prerequisites
 
-* **Azure Subscription** (Owner)  
-* **Azure CLI** ≥ 2.40.0  
-* **Bicep CLI**  
-* **Node.js** ≥ 16.x & **npm**  
-* **GitHub PAT** with `repo` & `workflow` scopes  
+- Azure subscription with permissions to create Management Groups, Subscriptions, DevTest Labs  
+- Azure CLI ≥ 2.40.0 & Bicep CLI  
+- Node.js ≥ 16.x & npm  
+- GitHub OIDC / PAT setup for Azure login  
+- `SANDBOX_SUBSCRIPTION_ID` & `DEVTEST_LAB_RG` set as GitHub Secrets  
 
 ---
 
@@ -135,3 +97,97 @@ Enable secure, governed blockchain development on Azure—providing teams with a
 ```bash
 git clone https://github.com/YourOrg/YourRepo.git
 cd YourRepo
+
+
+<details>
+<summary>2. Azure Login & Subscription</summary>
+
+```bash
+az login
+az account set --subscription <your-infra-subscription>
+
+⚙️ Deploy Landing Zone
+az deployment sub create \
+  --location eastus \
+  --template-file bicep/landing-zone.bicep \
+  --parameters @bicep/parameters/landing-zone-parameters.json
+
+🖥 Provision DevTest Lab
+
+9.1 Core DevTest Lab
+
+az group create --name rg-sandbox-lab --location eastus
+
+az lab create \
+  --resource-group rg-sandbox-lab \
+  --name blockchain-devtestlab \
+  --location eastus \
+  --storage-type Premium
+
+az lab formula create-quota \
+  --lab-name blockchain-devtestlab \
+  --resource-group rg-sandbox-lab \
+  --user-entitlement quotaType=Core count=8
+
+
+9.2 Blockchain DevTest Lab Environment
+Upload install-besu.sh artifact
+
+az lab artifact create \
+  --resource-group rg-sandbox-lab \
+  --lab-name blockchain-devtestlab \
+  --name install-besu \
+  --display-name "IBFT Besu Installer" \
+  --artifact-type CustomScript \
+  --uri "https://raw.githubusercontent.com/YourOrg/YourRepo/main/devtest-lab/scripts/install-besu.sh" \
+  --parameters '{
+    "GENESIS_URI":{"type":"string","defaultValue":""},
+    "CHAIN_ID":{"type":"string","defaultValue":"10"},
+    "GAS_LIMIT":{"type":"string","defaultValue":"0x1C9C380"},
+    "BOOTNODES":{"type":"string","defaultValue":""},
+    "RPC_ENABLED":{"type":"boolean","defaultValue":false}
+  }'
+
+
+Configure devtest-lab/parameters/blockchain-env.parameters.json
+
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "labName":      { "value": "blockchain-devtestlab" },
+    "labRg":        { "value": "rg-sandbox-lab" },
+    "location":     { "value": "eastus" },
+    "hubVnetId":    { "value": "/subscriptions/.../resourceGroups/rg-network/providers/Microsoft.Network/virtualNetworks/hub-vnet" },
+    "keyVaultName": { "value": "dev-blockchain-kv-eastus" }
+  }
+}
+
+
+Push your devtest-lab/ changes to trigger .github/workflows/deploy-blockchain-env.yml and verify that 4 validator, 2 RPC/API, and 2 bootnode VMs (running Hyperledger Besu IBFT) come online.
+
+📜 Smart-Contract Workflow
+Local dev
+
+cd smart-contracts
+npm install
+npx hardhat compile
+npx hardhat test
+
+Integration tests against Besu
+export BLOCKCHAIN_RPC="http://rpc-1.blockchain-devtestlab.lab.azure.com:8545"
+npx hardhat test --network devtest
+
+
+Deploy contracts into lab
+
+npx hardhat run scripts/deploy.js --network devtest
+
+🔄 CI/CD Pipelines
+landing-zone-ci.yml — Landing Zone infra
+
+deploy-blockchain-env.yml — IBFT Besu environment
+
+hardhat-ci.yml — Smart-contract compile/test/deploy
+
+
