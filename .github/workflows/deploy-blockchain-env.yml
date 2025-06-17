@@ -1,27 +1,35 @@
+# .github/workflows/deploy-blockchain-env.yml
 name: Deploy Blockchain DevTest Lab
 
 on:
   push:
+    # Trigger when environment Bicep or parameters change
     paths:
       - 'devtest-lab/blockchain-devtestlab-environment.bicep'
       - 'devtest-lab/parameters/blockchain-env.parameters.json'
   workflow_dispatch:
 
 jobs:
-  deploy:
+  deploy-blockchain-env:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      # Prompt: Check out the repo so we can access our Bicep and parameters files
+      - name: Checkout repository
         uses: actions/checkout@v3
 
+      # Prompt: Authenticate to Azure using GitHub OIDC (no stored secrets required)
       - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
-          # Use your GitHub-configured federated client in Azure AD
+          # client-id: ID of the federated application in AAD
           client-id: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+          # tenant-id: Your Azure AD tenant
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          # subscription-id: The sandbox subscription into which we'll deploy
           subscription-id: ${{ secrets.SANDBOX_SUBSCRIPTION_ID }}
 
+      # Prompt: Validate Bicep syntax & semantics before attempting a deployment
       - name: Validate Bicep template
         run: |
           az deployment group validate \
@@ -29,7 +37,8 @@ jobs:
             --template-file devtest-lab/blockchain-devtestlab-environment.bicep \
             --parameters @devtest-lab/parameters/blockchain-env.parameters.json
 
-      - name: Deploy Blockchain environment
+      # Prompt: Perform the actual deployment of the DevTest Lab blockchain environment
+      - name: Deploy Blockchain DevTest Lab Environment
         run: |
           az deployment group create \
             --resource-group ${{ secrets.DEVTEST_LAB_RG }} \
