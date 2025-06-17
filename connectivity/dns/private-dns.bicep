@@ -1,3 +1,34 @@
+// =============================================================================
+// Azure Private DNS Zone Deployment Module
+// Last Updated: 2025-06-17 12:39:40
+// Author: GEP-V
+// =============================================================================
+//
+// PROMPT ENGINEERING NOTES:
+// When requesting AI-generated or AI-reviewed Bicep templates for Private DNS in Azure, follow these best practices:
+//
+// 1. Clearly parameterize all aspects to maximize reusability and automation:
+//    - location: Azure region context for resource deployment (typically 'global' for DNS).
+//    - tags: Tagging for environment, deployment, and audit traceability.
+//    - hubVnetId: Resource ID of the hub virtual network for DNS linking.
+//    - spokeVnetIds: Array of spoke VNet IDs for DNS linking (parameterized for flexibility).
+//    - linkNameSuffix: Optional suffix for DNS zone link names for uniqueness and readability.
+//    - privateDnsZones: Array of private DNS zones to be created and linked.
+//
+// 2. Ensure array-driven resource creation for scalable and DRY (Don't Repeat Yourself) deployments:
+//    - Use array loops for creating DNS zones and virtual network links.
+//    - Support arbitrary numbers of zones and spokes.
+//
+// 3. Document default values and provide rationale for any hardcoded lists (e.g., default private DNS zones for common Azure services).
+//
+// 4. When linking DNS zones, clarify whether registration is enabled or disabled, and why.
+//
+// 5. Output critical resource IDs for downstream automation or visibility.
+//
+// 6. When using this pattern for a hub-and-spoke topology, explicitly note the intended design (central hub with multiple spokes sharing DNS zones).
+//
+// =============================================================================
+
 @description('The Azure region where resources will be deployed')
 param location string = resourceGroup().location
 
