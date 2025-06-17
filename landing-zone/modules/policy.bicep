@@ -1,7 +1,30 @@
 // =============================================================================
 // Azure Policy Assignment Module
-// Last Updated: 2025-06-10 12:50:16
+// Last Updated: 2025-06-17 12:37:33
 // Author: GEP-V
+// =============================================================================
+//
+// PROMPT ENGINEERING NOTES:
+// When using AI assistants to generate or modify Bicep modules for Azure Policy Assignment, follow these best practices:
+//
+// 1. Explicitly specify which parameters are required for automation and flexibility:
+//    - assignmentName: Unique name for the policy assignment
+//    - policyDefinitionId: Resource ID of the policy definition to assign
+//    - policyDescription & displayName: Clear human-readable context for the assignment
+//    - policyParameters: Use a JSON object for parameterizing the policy
+//    - enforcementMode: Choose between 'Default' or 'DoNotEnforce' (parameterized)
+//    - useIdentity: Optionally assign a managed identity to the policy assignment
+//
+// 2. Parameterize all configuration inputs to maximize reusability for different policies and scopes.
+//
+// 3. Use the @description and @allowed decorators to provide context and validation for each parameter.
+//
+// 4. Document the intended deployment scope (resource group, subscription, etc.) and reference best practices for Azure Policy management.
+//
+// 5. Output critical resource identifiers (e.g., policyAssignmentId) for downstream automation or reporting.
+//
+// 6. When asking AI to generate or review this module, request that policy assignment identity, enforcement mode, and parameter objects are always explicitly handled for enterprise compliance.
+//
 // =============================================================================
 
 @description('Name for the policy assignment')
