@@ -1,0 +1,24 @@
+// devtest-lab/genesis/chainConfig.json
+{
+  "chainId": 10,
+  "networkId": 10,
+  "ibft2": {
+    "blockPeriodSeconds": 2,
+    "epochLength": 30000,
+    "requestTimeoutSeconds": 4
+  },
+  "gasLimit": "0x1C9C380",
+  "difficulty": "0x1",
+  "alloc": {
+    "0x087050CCfD660Fc267812925c6061E5001727072": { "balance": "0x1000000000000000000000000" },
+    "0x8eb24C060ee1f3c3b31f904de81815705afA6853": { "balance": "0x1000000000000000000000000" },
+    "0x21250881C2469348e4F06386c3F3d76aBBE1A1B3": { "balance": "0x1000000000000000000000000" },
+    "0x27FAFb951F4095079e63A64d5eF8E88285cA798c": { "balance": "0x1000000000000000000000000" }
+  },
+  "validators": [
+    "0x087050CCfD660Fc267812925c6061E5001727072",
+    "0x8eb24C060ee1f3c3b31f904de81815705afA6853",
+    "0x21250881C2469348e4F06386c3F3d76aBBE1A1B3",
+    "0x27FAFb951F4095079e63A64d5eF8E88285cA798c"
+  ]
+}

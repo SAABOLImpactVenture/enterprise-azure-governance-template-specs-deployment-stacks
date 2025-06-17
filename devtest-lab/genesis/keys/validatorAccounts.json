@@ -1,0 +1,22 @@
+[
+  {
+    "name": "validator-1",
+    "address": "0x087050CCfD660Fc267812925c6061E5001727072",
+    "privateKey": "0x4c230b95bcd994863b275ba752139f40430ebdbe1df10ad230296379ba5b072c"
+  },
+  {
+    "name": "validator-2",
+    "address": "0x8eb24C060ee1f3c3b31f904de81815705afA6853",
+    "privateKey": "0x2104a6bf474c8759f45e120e8d50e466bb554e5761dbe225f6ca83fd916b683f"
+  },
+  {
+    "name": "validator-3",
+    "address": "0x21250881C2469348e4F06386c3F3d76aBBE1A1B3",
+    "privateKey": "0xa8a9e7531c11367d50897054e49a3274a086b920e96ea323f3ac55cb72725828"
+  },
+  {
+    "name": "validator-4",
+    "address": "0x27FAFb951F4095079e63A64d5eF8E88285cA798c",
+    "privateKey": "0x178e116c6f9e75cde177d8de3969d32dac340460c970f32f12653c41d4eae0a1"
+  }
+]
