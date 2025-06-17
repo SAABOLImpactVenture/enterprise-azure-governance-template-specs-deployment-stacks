@@ -3,10 +3,25 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "labName":      { "value": "YOUR_DEVTEST_LAB_NAME" },
-    "labRg":        { "value": "YOUR_DEVTEST_LAB_RESOURCE_GROUP" },
-    "location":     { "value": "eastus" },
-    "hubVnetId":    { "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-network/providers/Microsoft.Network/virtualNetworks/hub-vnet" },
-    "keyVaultName": { "value": "dev-blockchain-kv-eastus" }
+    "labName": {
+      "value": "blockchain-devtestlab"          // Name of your DevTest Lab
+    },
+    "labRg": {
+      "value": "rg-sandbox-lab"                  // Resource group for the DevTest Lab
+    },
+    "location": {
+      "value": "eastus"                          // Azure region to deploy into
+    },
+    "hubVnetId": {
+      "value": "/subscriptions/<CONNECTIVITY_SUBSCRIPTION_ID>/resourceGroups/rg-network/providers/Microsoft.Network/virtualNetworks/hub-vnet"
+      /* 
+        Replace <CONNECTIVITY_SUBSCRIPTION_ID> with the subscription ID
+        (you have stored as the GitHub secret CONNECTIVITY_SUBSCRIPTION_ID)
+        that contains your hub-vnet.
+      */
+    },
+    "keyVaultName": {
+      "value": "dev-blockchain-kv-eastus"        // Name of your Key Vault holding genesis & node keys
+    }
   }
 }
