@@ -1,15 +1,17 @@
+//
+// devtest-lab/blockchain-devtestlab-environment.bicep
+//
+
 /*
-  Bicep template to define a DevTest Lab environment for an IBFT Ethereum-based network
-  - Ubuntu 22.04 LTS VMs
-  - 4 Validator nodes
-  - 2 RPC/API nodes
-  - 2 Bootnodes (private + public)
-  - Key Vault integration, managed identities
-  - VNet peering into existing hub-spoke
+  DevTest Lab Bicep template for an IBFT Hyperledger Besu network
+  - 4 Validator VMs
+  - 2 RPC/API VMs
+  - 2 Bootnodes (1 private, 1 public)
+  - CustomScript artifact to install Besu
   - Auto-shutdown at 19:00 daily
 */
 
-// 1. PARAMETERS
+// PARAMETERS
 
 @description('Name of the existing DevTest Lab')
 param labName        string
@@ -25,6 +27,9 @@ param hubVnetId      string
 
 @description('Key Vault name where genesis.json & nodekeys live')
 param keyVaultName   string = 'dev-blockchain-lab-kv'
+
+@description('URI to the genesis.json file')
+param genesisUri     string
 
 @description('VM size for all blockchain nodes')
 param vmSize         string = 'Standard_D4s_v5'
@@ -59,18 +64,39 @@ param chainId        string = '0x0A'
 @description('Gas limit for IBFT network (hex)')
 param gasLimit       string = '0x1C9C380'
 
-@description('URI to the genesis.json file')
-param genesisUri     string
-
 @description('Enable HTTP RPC on the RPC nodes')
 param rpcEnabled     bool   = false
 
-// derived
+
+// DERIVED VARIABLES
+
 var keyVaultId = resourceId('Microsoft.KeyVault/vaults', keyVaultName)
 var labId      = resourceId(labRg, 'Microsoft.DevTestLab/labs', labName)
 
 
-// 2. FORMULAS: one per role
+// CUSTOM SCRIPT ARTIFACT
+
+resource installBesuArtifact 'Microsoft.DevTestLab/labs/artifacts@2018-09-15' = {
+  name: '${labName}/install-besu'
+  parent: {
+    id: labId
+  }
+  properties: {
+    displayName:  'Install Besu (v25+)'
+    artifactType: 'CustomScript'
+    uri:           genesisUri  // reused param to point at your script URI instead if needed
+    parameters: {
+      GENESIS_URI: { type: 'String';  defaultValue: genesisUri }
+      CHAIN_ID:    { type: 'String';  defaultValue: chainId }
+      GAS_LIMIT:   { type: 'String';  defaultValue: gasLimit }
+      BOOTNODES:   { type: 'String';  defaultValue: bootnodes }
+      RPC_ENABLED: { type: 'Boolean'; defaultValue: rpcEnabled }
+    }
+  }
+}
+
+
+// FORMULAS: Validator, RPC, Bootnode
 
 resource validatorFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
   for i in range(1, validatorCount + 1): {
@@ -83,13 +109,13 @@ resource validatorFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
       formulaContent: {
         artifacts: [
           {
-            artifactId: '${labName}/Install-Besu'
+            artifactId: installBesuArtifact.id
             parameters: {
-              genesisUri: { value: genesisUri }
-              chainId:    { value: chainId }
-              gasLimit:   { value: gasLimit }
-              bootnodes:  { value: bootnodes }
-              rpcEnabled: { value: false }
+              GENESIS_URI: { value: genesisUri }
+              CHAIN_ID:    { value: chainId }
+              GAS_LIMIT:   { value: gasLimit }
+              BOOTNODES:   { value: bootnodes }
+              RPC_ENABLED: { value: false }
             }
           }
         ]
@@ -109,13 +135,13 @@ resource rpcFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
       formulaContent: {
         artifacts: [
           {
-            artifactId: '${labName}/Install-Besu'
+            artifactId: installBesuArtifact.id
             parameters: {
-              genesisUri: { value: genesisUri }
-              chainId:    { value: chainId }
-              gasLimit:   { value: gasLimit }
-              bootnodes:  { value: bootnodes }
-              rpcEnabled: { value: rpcEnabled }
+              GENESIS_URI: { value: genesisUri }
+              CHAIN_ID:    { value: chainId }
+              GAS_LIMIT:   { value: gasLimit }
+              BOOTNODES:   { value: bootnodes }
+              RPC_ENABLED: { value: rpcEnabled }
             }
           }
         ]
@@ -135,13 +161,15 @@ resource bootnodeFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
       formulaContent: {
         artifacts: [
           {
-            artifactId: '${labName}/Install-Besu'
+            artifactId: installBesuArtifact.id
             parameters: {
-              genesisUri:    { value: genesisUri }
-              chainId:       { value: chainId }
-              gasLimit:      { value: gasLimit }
-              bootnodeMode:  { value: true }
-              staticPublicIp:{ value: i == 2 }  // only the second bootnode public
+              GENESIS_URI:    { value: genesisUri }
+              CHAIN_ID:       { value: chainId }
+              GAS_LIMIT:      { value: gasLimit }
+              BOOTNODES:      { value: bootnodes }
+              RPC_ENABLED:    { value: false }
+              bootnodeMode:   { value: true }
+              staticPublicIp: { value: i == bootnodeCount }
             }
           }
         ]
@@ -150,7 +178,8 @@ resource bootnodeFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
   }
 ]
 
-// 3. DEVTEST LAB ENVIRONMENT
+
+// DEVTEST LAB ENVIRONMENT
 
 resource labEnv 'Microsoft.DevTestLab/labs/environments@2018-09-15' = {
   name: '${labName}/blockchain-dev-env'
@@ -170,25 +199,26 @@ resource labEnv 'Microsoft.DevTestLab/labs/environments@2018-09-15' = {
     }
     labVmProfiles: concat(
       [for i in range(1, validatorCount + 1): {
-        name:       'validator-${i}'
-        formulaId:  validatorFormulas[i-1].id
+        name:      'validator-${i}'
+        formulaId: validatorFormulas[i-1].id
         computeVm: { size: vmSize }
       }],
       [for i in range(1, rpcCount + 1): {
-        name:       'rpc-${i}'
-        formulaId:  rpcFormulas[i-1].id
+        name:      'rpc-${i}'
+        formulaId: rpcFormulas[i-1].id
         computeVm: { size: vmSize }
       }],
       [for i in range(1, bootnodeCount + 1): {
-        name:       'bootnode-${i}'
-        formulaId:  bootnodeFormulas[i-1].id
+        name:      'bootnode-${i}'
+        formulaId: bootnodeFormulas[i-1].id
         computeVm: { size: vmSize }
       }]
     )
   }
 }
 
-// 4. OUTPUTS
 
-output rpc1PublicFqdn  string = reference(resourceId(labRg, 'Microsoft.Network/publicIPAddresses', '${labName}-rpc-1-pip')).dnsSettings.fqdn
-output rpc1PrivateIp  string = reference(resourceId(labRg, 'Microsoft.Network/networkInterfaces', '${labName}-rpc-1-nic')).ipConfigurations[0].properties.privateIPAddress
+// OUTPUTS
+
+output rpc1PublicFqdn string = reference(resourceId(labRg, 'Microsoft.Network/publicIPAddresses', '${labName}-rpc-1-pip')).dnsSettings.fqdn
+output rpc1PrivateIp string = reference(resourceId(labRg, 'Microsoft.Network/networkInterfaces', '${labName}-rpc-1-nic')).ipConfigurations[0].properties.privateIPAddress
