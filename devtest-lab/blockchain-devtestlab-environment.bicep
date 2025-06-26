@@ -1,80 +1,60 @@
-//
-// devtest-lab/blockchain-devtestlab-environment.bicep
-//
+// File: devtest-lab/blockchain-devtestlab-environment.bicep
+targetScope = 'resourceGroup'
 
 /*
   DevTest Lab Bicep template for an IBFT Hyperledger Besu network
-  - 4 Validator VMs
-  - 2 RPC/API VMs
-  - 2 Bootnodes (1 private, 1 public)
-  - CustomScript artifact to install Besu
-  - Auto-shutdown at 19:00 daily
+  – 4 Validators, 2 RPC/API nodes, 2 Bootnodes
+  – Registers a CustomScript artifact to install Besu
+  – Auto-shutdown at 19:00 daily
 */
 
 // PARAMETERS
 
 @description('Name of the existing DevTest Lab')
-param labName        string
+param labName           string
 
-@description('Resource group containing the DevTest Lab')
-param labRg          string
+@description('Azure region for all resources')
+param location          string = resourceGroup().location
 
-@description('Azure location for all resources')
-param location       string = resourceGroup(labRg).location
+@description('URI to the install-besu.sh script')
+param installScriptUri  string = 'https://raw.githubusercontent.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks/main/devtest-lab/scripts/install-besu.sh'
 
-@description('Hub VNet resource ID for peering')
-param hubVnetId      string
+@description('URI to the locked-down genesis.json')
+param genesisUri        string = 'https://raw.githubusercontent.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks/main/devtest-lab/genesis/genesis.json'
 
-@description('Key Vault name where genesis.json & nodekeys live')
-param keyVaultName   string = 'dev-blockchain-lab-kv'
+@description('IBFT Chain ID (hex or decimal)')
+param chainId           string = '0x0A'
 
-@description('URI to the genesis.json file')
-param genesisUri     string
-
-@description('VM size for all blockchain nodes')
-param vmSize         string = 'Standard_D4s_v5'
-
-@description('Image Publisher for the VM formulas')
-param imagePublisher string = 'Canonical'
-
-@description('Image Offer for the VM formulas')
-param imageOffer     string = '0001-com-ubuntu-server-jammy'
-
-@description('Image SKU for the VM formulas')
-param imageSku       string = '22_04-lts-gen2'
-
-@description('Image Version for the VM formulas')
-param imageVersion   string = 'latest'
-
-@description('Number of validator nodes')
-param validatorCount int    = 4
-
-@description('Number of RPC/API nodes')
-param rpcCount       int    = 2
-
-@description('Number of bootnode VMs')
-param bootnodeCount  int    = 2
+@description('IBFT Gas Limit (hex)')
+param gasLimit          string = '0x1C9C380'
 
 @description('Comma-separated enode URLs for bootnodes')
-param bootnodes      string = ''
+param bootnodes         string = ''
 
-@description('Chain ID for IBFT network (hex)')
-param chainId        string = '0x0A'
+@description('Enable HTTP JSON-RPC on RPC nodes')
+param rpcEnabled        bool   = false
 
-@description('Gas limit for IBFT network (hex)')
-param gasLimit       string = '0x1C9C380'
+@description('Size for all VMs')
+param vmSize            string = 'Standard_D4s_v5'
 
-@description('Enable HTTP RPC on the RPC nodes')
-param rpcEnabled     bool   = false
+@description('Number of validator VMs')
+param validatorCount    int    = 4
+
+@description('Number of RPC/API VMs')
+param rpcCount          int    = 2
+
+@description('Number of bootnode VMs')
+param bootnodeCount     int    = 2
+
+@description('ID of the existing virtual network to peer into')
+param labVnetId         string
+
+// DERIVED
+
+var labId = resourceId('Microsoft.DevTestLab/labs', labName)
 
 
-// DERIVED VARIABLES
-
-var keyVaultId = resourceId('Microsoft.KeyVault/vaults', keyVaultName)
-var labId      = resourceId(labRg, 'Microsoft.DevTestLab/labs', labName)
-
-
-// CUSTOM SCRIPT ARTIFACT
+// 1) REGISTER THE CustomScript ARTIFACT
 
 resource installBesuArtifact 'Microsoft.DevTestLab/labs/artifacts@2018-09-15' = {
   name: '${labName}/install-besu'
@@ -84,7 +64,7 @@ resource installBesuArtifact 'Microsoft.DevTestLab/labs/artifacts@2018-09-15' = 
   properties: {
     displayName:  'Install Besu (v25+)'
     artifactType: 'CustomScript'
-    uri:           genesisUri  // reused param to point at your script URI instead if needed
+    uri:           installScriptUri
     parameters: {
       GENESIS_URI: { type: 'String';  defaultValue: genesisUri }
       CHAIN_ID:    { type: 'String';  defaultValue: chainId }
@@ -96,14 +76,12 @@ resource installBesuArtifact 'Microsoft.DevTestLab/labs/artifacts@2018-09-15' = 
 }
 
 
-// FORMULAS: Validator, RPC, Bootnode
+// 2) CREATE FORMULAS FOR EACH ROLE
 
 resource validatorFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
   for i in range(1, validatorCount + 1): {
     name: '${labName}-validator-${i}-formula'
-    parent: {
-      id: labId
-    }
+    parent: { id: labId }
     properties: {
       osType: 'Linux'
       formulaContent: {
@@ -127,9 +105,7 @@ resource validatorFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
 resource rpcFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
   for i in range(1, rpcCount + 1): {
     name: '${labName}-rpc-${i}-formula'
-    parent: {
-      id: labId
-    }
+    parent: { id: labId }
     properties: {
       osType: 'Linux'
       formulaContent: {
@@ -153,9 +129,7 @@ resource rpcFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
 resource bootnodeFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
   for i in range(1, bootnodeCount + 1): {
     name: '${labName}-bootnode-${i}-formula'
-    parent: {
-      id: labId
-    }
+    parent: { id: labId }
     properties: {
       osType: 'Linux'
       formulaContent: {
@@ -179,18 +153,16 @@ resource bootnodeFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
 ]
 
 
-// DEVTEST LAB ENVIRONMENT
+// 3) PROVISION THE DEVTEST LAB ENVIRONMENT
 
 resource labEnv 'Microsoft.DevTestLab/labs/environments@2018-09-15' = {
   name: '${labName}/blockchain-dev-env'
-  parent: {
-    id: labId
-  }
+  parent: { id: labId }
   location: location
   properties: {
-    description: 'Blockchain IBFT network environment'
-    labVirtualNetworkId: hubVnetId
-    allowClaim: true
+    description:         'IBFT Besu network environment'
+    labVirtualNetworkId: labVnetId
+    allowClaim:          true
     shutdown: {
       taskType: 'LabVmsShutdownTask'
       dailyRecurrence: {
@@ -198,27 +170,33 @@ resource labEnv 'Microsoft.DevTestLab/labs/environments@2018-09-15' = {
       }
     }
     labVmProfiles: concat(
-      [for i in range(1, validatorCount + 1): {
-        name:      'validator-${i}'
-        formulaId: validatorFormulas[i-1].id
-        computeVm: { size: vmSize }
-      }],
-      [for i in range(1, rpcCount + 1): {
-        name:      'rpc-${i}'
-        formulaId: rpcFormulas[i-1].id
-        computeVm: { size: vmSize }
-      }],
-      [for i in range(1, bootnodeCount + 1): {
-        name:      'bootnode-${i}'
-        formulaId: bootnodeFormulas[i-1].id
-        computeVm: { size: vmSize }
-      }]
+      [
+        for i in range(1, validatorCount + 1): {
+          name:      'validator-${i}'
+          formulaId: validatorFormulas[i-1].id
+          computeVm: { size: vmSize }
+        }
+      ],
+      [
+        for i in range(1, rpcCount + 1): {
+          name:      'rpc-${i}'
+          formulaId: rpcFormulas[i-1].id
+          computeVm: { size: vmSize }
+        }
+      ],
+      [
+        for i in range(1, bootnodeCount + 1): {
+          name:      'bootnode-${i}'
+          formulaId: bootnodeFormulas[i-1].id
+          computeVm: { size: vmSize }
+        }
+      ]
     )
   }
 }
 
 
-// OUTPUTS
+// 4) OPTIONAL OUTPUTS
 
-output rpc1PublicFqdn string = reference(resourceId(labRg, 'Microsoft.Network/publicIPAddresses', '${labName}-rpc-1-pip')).dnsSettings.fqdn
-output rpc1PrivateIp string = reference(resourceId(labRg, 'Microsoft.Network/networkInterfaces', '${labName}-rpc-1-nic')).ipConfigurations[0].properties.privateIPAddress
+output rpc1Fqdn     string = reference(resourceId('Microsoft.Network/publicIPAddresses', '${labName}-rpc-1-pip')).dnsSettings.fqdn
+output rpc1Private  string = reference(resourceId('Microsoft.Network/networkInterfaces',    '${labName}-rpc-1-nic')).ipConfigurations[0].properties.privateIPAddress
