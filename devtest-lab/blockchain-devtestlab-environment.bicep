@@ -1,4 +1,3 @@
-// File: devtest-lab/blockchain-devtestlab-environment.bicep
 targetScope = 'resourceGroup'
 
 /*
@@ -49,18 +48,17 @@ param bootnodeCount     int    = 2
 @description('ID of the existing virtual network to peer into')
 param labVnetId         string
 
+
 // DERIVED
 
 var labId = resourceId('Microsoft.DevTestLab/labs', labName)
 
 
-// 1) REGISTER THE CustomScript ARTIFACT
+// 1) REGISTER THE CUSTOMSCRIPT ARTIFACT
 
 resource installBesuArtifact 'Microsoft.DevTestLab/labs/artifacts@2018-09-15' = {
   name: '${labName}/install-besu'
-  parent: {
-    id: labId
-  }
+  parent: { id: labId }
   properties: {
     displayName:  'Install Besu (v25+)'
     artifactType: 'CustomScript'
@@ -76,7 +74,7 @@ resource installBesuArtifact 'Microsoft.DevTestLab/labs/artifacts@2018-09-15' = 
 }
 
 
-// 2) CREATE FORMULAS FOR EACH ROLE
+// 2) FORMULAS FOR EACH ROLE
 
 resource validatorFormulas 'Microsoft.DevTestLab/labs/formulas@2018-09-15' = [
   for i in range(1, validatorCount + 1): {
@@ -164,7 +162,7 @@ resource labEnv 'Microsoft.DevTestLab/labs/environments@2018-09-15' = {
     labVirtualNetworkId: labVnetId
     allowClaim:          true
     shutdown: {
-      taskType: 'LabVmsShutdownTask'
+      taskType:    'LabVmsShutdownTask'
       dailyRecurrence: {
         hours: [19]
       }
@@ -198,5 +196,5 @@ resource labEnv 'Microsoft.DevTestLab/labs/environments@2018-09-15' = {
 
 // 4) OPTIONAL OUTPUTS
 
-output rpc1Fqdn     string = reference(resourceId('Microsoft.Network/publicIPAddresses', '${labName}-rpc-1-pip')).dnsSettings.fqdn
-output rpc1Private  string = reference(resourceId('Microsoft.Network/networkInterfaces',    '${labName}-rpc-1-nic')).ipConfigurations[0].properties.privateIPAddress
+output rpc1Fqdn    string = reference(resourceId('Microsoft.Network/publicIPAddresses', '${labName}-rpc-1-pip')).dnsSettings.fqdn
+output rpc1Private string = reference(resourceId('Microsoft.Network/networkInterfaces',    '${labName}-rpc-1-nic')).ipConfigurations[0].properties.privateIPAddress

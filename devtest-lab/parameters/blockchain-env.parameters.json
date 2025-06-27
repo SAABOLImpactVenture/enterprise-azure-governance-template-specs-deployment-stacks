@@ -3,10 +3,44 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "labName":      { "value": "YOUR_DEVTEST_LAB_NAME" },
-    "labRg":        { "value": "YOUR_DEVTEST_LAB_RESOURCE_GROUP" },
-    "location":     { "value": "eastus" },
-    "hubVnetId":    { "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-network/providers/Microsoft.Network/virtualNetworks/hub-vnet" },
-    "keyVaultName": { "value": "dev-blockchain-kv-eastus" }
+    "labName": {
+      "value": "blockchain-devtestlab"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "installScriptUri": {
+      "value": "https://raw.githubusercontent.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks/main/devtest-lab/scripts/install-besu.sh"
+    },
+    "genesisUri": {
+      "value": "https://raw.githubusercontent.com/SAABOLImpactVenture/enterprise-azure-governance-template-specs-deployment-stacks/main/devtest-lab/genesis/genesis.json"
+    },
+    "chainId": {
+      "value": "0x0A"
+    },
+    "gasLimit": {
+      "value": "0x1C9C380"
+    },
+    "bootnodes": {
+      "value": ""
+    },
+    "rpcEnabled": {
+      "value": false
+    },
+    "vmSize": {
+      "value": "Standard_D4s_v5"
+    },
+    "validatorCount": {
+      "value": 4
+    },
+    "rpcCount": {
+      "value": 2
+    },
+    "bootnodeCount": {
+      "value": 2
+    },
+    "labVnetId": {
+      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-network/providers/Microsoft.Network/virtualNetworks/hub-vnet"
+    }
   }
 }
