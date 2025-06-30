@@ -1,18 +1,3 @@
-# ==========================================================================
-# Enterprise Azure Network Configuration 
-# ==========================================================================
-# PROMPT ENGINEERING GUIDANCE:
-# This workflow creates a complete hub-spoke network architecture by:
-# - Using your existing Bicep structure which has separate module folders
-# - Creating spoke VNets in all landing zone subscriptions
-# - Using your existing vnet-peering.bicep for hub-spoke connections
-# - Ensuring consistent DNS and security across all network components
-#
-# REPOSITORY STRUCTURE CONSIDERATIONS:
-# - Your repo uses a modular approach with separate Bicep files per component
-# - No templates folder exists - instead bicep files are in module folders
-# - Creates a new spoke-network component that matches your structure
-
 name: Configure Enterprise Network Architecture
 
 on:
@@ -43,22 +28,15 @@ permissions:
   contents: read
 
 env:
-  # Authentication
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  
-  # Subscription IDs
   CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
   MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
   IDENTITY_SUBSCRIPTION_ID: ${{ secrets.IDENTITY_SUBSCRIPTION_ID }}
   LANDINGZONE_A2_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}
   LANDINGZONE_P1_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}
-  
-  # Resource naming and parameters
   ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
   LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
-  
-  # Hub network parameters
   HUB_RESOURCE_GROUP: "rg-connectivity-hub"
   HUB_VNET_NAME: "vnet-hub"
 
@@ -74,14 +52,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Verify hub network exists
         uses: azure/login@v2
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-      
+
       - name: Get hub network information
         id: hub-info
         run: |
@@ -113,62 +91,639 @@ jobs:
           echo "identity_subscription_set=${{ env.IDENTITY_SUBSCRIPTION_ID != '' }}" >> $GITHUB_OUTPUT
           echo "landingzone_a2_subscription_set=${{ env.LANDINGZONE_A2_SUBSCRIPTION_ID != '' }}" >> $GITHUB_OUTPUT
 
-  # ==========================================================================
-  # DEPLOY MANAGEMENT SPOKE
-  # ==========================================================================
   deploy-management-network:
     name: Deploy Management Spoke
     needs: validate-prerequisites
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.management_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'management') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      # (all steps unchanged)
-      # ... rest of the steps remain the same as your original code ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  # ==========================================================================
-  # DEPLOY IDENTITY SPOKE
-  # ==========================================================================
+      - name: Create spoke network Bicep file
+        run: |
+          cat > connectivity/spoke-network/spoke-network.bicep << 'EOL'
+          // Spoke Network Module - Created for enterprise-network configuration
+          @description('Name of the spoke network')
+          param spokeName string
+          @description('Deployment environment')
+          param environment string = 'production'
+          @description('Azure region for resources')
+          param location string = resourceGroup().location
+          @description('Address space for the spoke virtual network')
+          param addressPrefix string
+          @description('Subnet configurations')
+          param subnets array = [
+            {
+              name: 'snet-default'
+              properties: {
+                addressPrefix: replace(addressPrefix, '0.0/16', '0.0/24')
+                privateEndpointNetworkPolicies: 'Disabled'
+              }
+            }
+            {
+              name: 'snet-endpoints'
+              properties: {
+                addressPrefix: replace(addressPrefix, '0.0/16', '1.0/24')
+                privateEndpointNetworkPolicies: 'Disabled'
+              }
+            }
+          ]
+          @description('Resource tags')
+          param tags object = {}
+          resource spokeVNet 'Microsoft.Network/virtualNetworks@2023-04-01' = {
+            name: 'vnet-${spokeName}'
+            location: location
+            tags: tags
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  addressPrefix
+                ]
+              }
+              subnets: subnets
+            }
+          }
+          output vnetId string = spokeVNet.id
+          output vnetName string = spokeVNet.name
+          EOL
+
+          mkdir -p connectivity/spoke-network/parameters
+          cat > connectivity/spoke-network/parameters/management-spoke.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "spokeName": {
+                "value": "management"
+              },
+              "environment": {
+                "value": "${{ env.ENVIRONMENT }}"
+              },
+              "location": {
+                "value": "${{ env.LOCATION }}"
+              },
+              "addressPrefix": {
+                "value": "10.1.0.0/16"
+              },
+              "subnets": {
+                "value": [
+                  {
+                    "name": "snet-management",
+                    "properties": {
+                      "addressPrefix": "10.1.0.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  },
+                  {
+                    "name": "snet-monitor",
+                    "properties": {
+                      "addressPrefix": "10.1.1.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  },
+                  {
+                    "name": "snet-bastion-clients",
+                    "properties": {
+                      "addressPrefix": "10.1.2.0/24"
+                    }
+                  }
+                ]
+              },
+              "tags": {
+                "value": {
+                  "environment": "${{ env.ENVIRONMENT }}",
+                  "networkType": "spoke",
+                  "spokeType": "management"
+                }
+              }
+            }
+          }
+          EOL
+          echo "Created spoke network Bicep files"
+
+      - name: Login to Azure (Management Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.MANAGEMENT_SUBSCRIPTION_ID }}
+
+      - name: Deploy management spoke network
+        run: |
+          RESOURCE_GROUP="rg-management-network"
+          LOCATION="${{ env.LOCATION }}"
+          echo "Creating/Verifying resource group $RESOURCE_GROUP..."
+          az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --tags environment=${{ env.ENVIRONMENT }} networkType=spoke
+          echo "Deploying management spoke network..."
+          az deployment group create \
+            --name "management-network-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file connectivity/spoke-network/spoke-network.bicep \
+            --parameters @connectivity/spoke-network/parameters/management-spoke.parameters.json
+          MGMT_VNET_ID=$(az network vnet show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "vnet-management" \
+            --query id -o tsv)
+          echo "Management spoke network deployed: $MGMT_VNET_ID"
+          echo "MGMT_VNET_ID=$MGMT_VNET_ID" >> $GITHUB_ENV
+
+      - name: Set up VNet peering to hub
+        run: |
+          echo "Creating VNet peering from management to hub..."
+          cat > connectivity/peering/parameters/mgmt-hub-peering.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "sourceVnetName": {
+                "value": "vnet-management"
+              },
+              "destinationVnetId": {
+                "value": "${{ env.HUB_VNET_ID }}"
+              },
+              "allowGatewayTransit": {
+                "value": false
+              },
+              "useRemoteGateways": {
+                "value": true
+              },
+              "allowForwardedTraffic": {
+                "value": true
+              },
+              "allowVirtualNetworkAccess": {
+                "value": true
+              }
+            }
+          }
+          EOL
+          az deployment group create \
+            --name "mgmt-to-hub-peering-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "rg-management-network" \
+            --template-file connectivity/peering/vnet-peering.bicep \
+            --parameters @connectivity/peering/parameters/mgmt-hub-peering.parameters.json
+
+      - name: Login to connectivity subscription for reverse peering
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+
+      - name: Create hub to management peering
+        run: |
+          echo "Creating VNet peering from hub to management..."
+          cat > connectivity/peering/parameters/hub-mgmt-peering.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "sourceVnetName": {
+                "value": "${{ env.HUB_VNET_NAME }}"
+              },
+              "destinationVnetId": {
+                "value": "${{ env.MGMT_VNET_ID }}"
+              },
+              "allowGatewayTransit": {
+                "value": true
+              },
+              "useRemoteGateways": {
+                "value": false
+              },
+              "allowForwardedTraffic": {
+                "value": true
+              },
+              "allowVirtualNetworkAccess": {
+                "value": true
+              }
+            }
+          }
+          EOL
+          az deployment group create \
+            --name "hub-to-mgmt-peering-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "${{ env.HUB_RESOURCE_GROUP }}" \
+            --template-file connectivity/peering/vnet-peering.bicep \
+            --parameters @connectivity/peering/parameters/hub-mgmt-peering.parameters.json
+
   deploy-identity-network:
     name: Deploy Identity Spoke
     needs: validate-prerequisites
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.identity_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'identity') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      # (all steps unchanged)
-      # ... rest of the steps remain the same as your original code ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  # ==========================================================================
-  # DEPLOY LANDING ZONE A2 SPOKE (ANALYTICS)
-  # ==========================================================================
+      - name: Create identity network parameters
+        run: |
+          mkdir -p connectivity/spoke-network/parameters
+          cat > connectivity/spoke-network/spoke-network.bicep << 'EOL'
+          // Spoke Network Module - Created for enterprise-network configuration
+          @description('Name of the spoke network')
+          param spokeName string
+          @description('Deployment environment')
+          param environment string = 'production'
+          @description('Azure region for resources')
+          param location string = resourceGroup().location
+          @description('Address space for the spoke virtual network')
+          param addressPrefix string
+          @description('Subnet configurations')
+          param subnets array = []
+          @description('Resource tags')
+          param tags object = {}
+          resource spokeVNet 'Microsoft.Network/virtualNetworks@2023-04-01' = {
+            name: 'vnet-${spokeName}'
+            location: location
+            tags: tags
+            properties: {
+              addressSpace: {
+                addressPrefixes: [
+                  addressPrefix
+                ]
+              }
+              subnets: subnets
+            }
+          }
+          output vnetId string = spokeVNet.id
+          output vnetName string = spokeVNet.name
+          EOL
+          cat > connectivity/spoke-network/parameters/identity-spoke.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "spokeName": {
+                "value": "identity"
+              },
+              "environment": {
+                "value": "${{ env.ENVIRONMENT }}"
+              },
+              "location": {
+                "value": "${{ env.LOCATION }}"
+              },
+              "addressPrefix": {
+                "value": "10.2.0.0/16"
+              },
+              "subnets": {
+                "value": [
+                  {
+                    "name": "snet-identity",
+                    "properties": {
+                      "addressPrefix": "10.2.0.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  },
+                  {
+                    "name": "snet-aadds",
+                    "properties": {
+                      "addressPrefix": "10.2.1.0/24"
+                    }
+                  },
+                  {
+                    "name": "snet-keyvault",
+                    "properties": {
+                      "addressPrefix": "10.2.2.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  }
+                ]
+              },
+              "tags": {
+                "value": {
+                  "environment": "${{ env.ENVIRONMENT }}",
+                  "networkType": "spoke",
+                  "spokeType": "identity"
+                }
+              }
+            }
+          }
+          EOL
+
+      - name: Login to Azure (Identity Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.IDENTITY_SUBSCRIPTION_ID }}
+
+      - name: Deploy identity spoke network
+        run: |
+          RESOURCE_GROUP="rg-identity-network"
+          LOCATION="${{ env.LOCATION }}"
+          echo "Creating/Verifying resource group $RESOURCE_GROUP..."
+          az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --tags environment=${{ env.ENVIRONMENT }} networkType=spoke
+          echo "Deploying identity spoke network..."
+          az deployment group create \
+            --name "identity-network-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file connectivity/spoke-network/spoke-network.bicep \
+            --parameters @connectivity/spoke-network/parameters/identity-spoke.parameters.json
+          IDENTITY_VNET_ID=$(az network vnet show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "vnet-identity" \
+            --query id -o tsv)
+          echo "Identity spoke network deployed: $IDENTITY_VNET_ID"
+          echo "IDENTITY_VNET_ID=$IDENTITY_VNET_ID" >> $GITHUB_ENV
+
+      - name: Set up VNet peering to hub
+        run: |
+          echo "Creating VNet peering from identity to hub..."
+          cat > connectivity/peering/parameters/identity-hub-peering.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "sourceVnetName": {
+                "value": "vnet-identity"
+              },
+              "destinationVnetId": {
+                "value": "${{ env.HUB_VNET_ID }}"
+              },
+              "allowGatewayTransit": {
+                "value": false
+              },
+              "useRemoteGateways": {
+                "value": true
+              },
+              "allowForwardedTraffic": {
+                "value": true
+              },
+              "allowVirtualNetworkAccess": {
+                "value": true
+              }
+            }
+          }
+          EOL
+          az deployment group create \
+            --name "identity-to-hub-peering-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "rg-identity-network" \
+            --template-file connectivity/peering/vnet-peering.bicep \
+            --parameters @connectivity/peering/parameters/identity-hub-peering.parameters.json
+
+      - name: Login to connectivity subscription for reverse peering
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+
+      - name: Create hub to identity peering
+        run: |
+          echo "Creating VNet peering from hub to identity..."
+          cat > connectivity/peering/parameters/hub-identity-peering.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "sourceVnetName": {
+                "value": "${{ env.HUB_VNET_NAME }}"
+              },
+              "destinationVnetId": {
+                "value": "${{ env.IDENTITY_VNET_ID }}"
+              },
+              "allowGatewayTransit": {
+                "value": true
+              },
+              "useRemoteGateways": {
+                "value": false
+              },
+              "allowForwardedTraffic": {
+                "value": true
+              },
+              "allowVirtualNetworkAccess": {
+                "value": true
+              }
+            }
+          }
+          EOL
+          az deployment group create \
+            --name "hub-to-identity-peering-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "${{ env.HUB_RESOURCE_GROUP }}" \
+            --template-file connectivity/peering/vnet-peering.bicep \
+            --parameters @connectivity/peering/parameters/hub-identity-peering.parameters.json
+
   deploy-landingzone-a2-network:
     name: Deploy Analytics Landing Zone Spoke
     needs: validate-prerequisites
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.landingzone_a2_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'landingzone-a2') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      # (all steps unchanged)
-      # ... rest of the steps remain the same as your original code ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  # ==========================================================================
-  # INTEGRATE WITH PRIVATE DNS ZONES 
-  # ==========================================================================
+      - name: Create analytics landing zone parameters
+        run: |
+          mkdir -p connectivity/spoke-network/parameters
+          cat > connectivity/spoke-network/parameters/a2-spoke.parameters.json << EOL
+          {
+            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "spokeName": {
+                "value": "a2-analytics"
+              },
+              "environment": {
+                "value": "${{ env.ENVIRONMENT }}"
+              },
+              "location": {
+                "value": "${{ env.LOCATION }}"
+              },
+              "addressPrefix": {
+                "value": "10.3.0.0/16"
+              },
+              "subnets": {
+                "value": [
+                  {
+                    "name": "snet-data",
+                    "properties": {
+                      "addressPrefix": "10.3.0.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  },
+                  {
+                    "name": "snet-synapse",
+                    "properties": {
+                      "addressPrefix": "10.3.1.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  },
+                  {
+                    "name": "snet-datalake",
+                    "properties": {
+                      "addressPrefix": "10.3.2.0/24",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  }
+                ]
+              },
+              "tags": {
+                "value": {
+                  "environment": "${{ env.ENVIRONMENT }}",
+                  "networkType": "spoke",
+                  "spokeType": "analytics"
+                }
+              }
+            }
+          }
+          EOL
+
+      - name: Login to Azure (Analytics Landing Zone Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.LANDINGZONE_A2_SUBSCRIPTION_ID }}
+
+      - name: Deploy analytics landing zone network
+        run: |
+          RESOURCE_GROUP="rg-a2-network"
+          LOCATION="${{ env.LOCATION }}"
+          echo "Creating/Verifying resource group $RESOURCE_GROUP..."
+          az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --tags environment=${{ env.ENVIRONMENT }} networkType=spoke
+          echo "Deploying analytics landing zone network..."
+          az deployment group create \
+            --name "a2-network-$(date +%Y%m%d%H%M%S)" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file connectivity/spoke-network/spoke-network.bicep \
+            --parameters @connectivity/spoke-network/parameters/a2-spoke.parameters.json
+          A2_VNET_ID=$(az network vnet show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "vnet-a2-analytics" \
+            --query id -o tsv)
+          echo "Analytics landing zone network deployed: $A2_VNET_ID"
+          echo "A2_VNET_ID=$A2_VNET_ID" >> $GITHUB_ENV
+
   integrate-dns:
     name: Integrate Private DNS Zones
     needs: [deploy-management-network, deploy-identity-network]
     runs-on: ubuntu-latest
-    if: needs.deploy-management-network.result == 'success' && needs.deploy-identity-network.result == 'success' && needs.validate-prerequisites.outputs.hub_exists == 'true'
+    if: needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      # (all steps unchanged)
-      # ... rest of the steps remain the same as your original code ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  # ==========================================================================
-  # VALIDATE NETWORK CONFIGURATION
-  # ==========================================================================
+      - name: Login to Azure (Connectivity Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+
+      - name: Get private DNS zones
+        run: |
+          echo "Checking for private DNS zones in hub..."
+          PRIVATE_DNS_ZONES=$(az network private-dns zone list \
+            --resource-group "${{ env.HUB_RESOURCE_GROUP }}" \
+            --query "[].name" -o tsv)
+          if [ -z "$PRIVATE_DNS_ZONES" ]; then
+            echo "No private DNS zones found in hub resource group. Nothing to link."
+            echo "PRIVATE_DNS_ZONES_EXIST=false" >> $GITHUB_ENV
+            exit 0
+          else
+            echo "Found private DNS zones:"
+            echo "$PRIVATE_DNS_ZONES"
+            echo "PRIVATE_DNS_ZONES_EXIST=true" >> $GITHUB_ENV
+          fi
+
+      - name: Link DNS zones to Management spoke
+        if: env.PRIVATE_DNS_ZONES_EXIST == 'true' && env.MANAGEMENT_SUBSCRIPTION_ID != ''
+        run: |
+          echo "Creating DNS zone links for management spoke..."
+          PRIVATE_DNS_ZONES=$(az network private-dns zone list \
+            --resource-group "${{ env.HUB_RESOURCE_GROUP }}" \
+            --query "[].name" -o tsv)
+          for ZONE in $PRIVATE_DNS_ZONES; do
+            echo "Linking zone $ZONE to management VNet..."
+            cat > connectivity/dns/parameters/mgmt-dns-link.parameters.json << EOL
+            {
+              "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "privateDnsZoneName": {
+                  "value": "$ZONE"
+                },
+                "vnetLinkName": {
+                  "value": "link-mgmt-${ZONE//./-}"
+                },
+                "virtualNetworkId": {
+                  "value": "${{ env.MGMT_VNET_ID }}"
+                },
+                "registrationEnabled": {
+                  "value": false
+                }
+              }
+            }
+            EOL
+            az deployment group create \
+              --name "dns-link-mgmt-${ZONE//./-}-$(date +%Y%m%d%H%M%S)" \
+              --resource-group "${{ env.HUB_RESOURCE_GROUP }}" \
+              --template-file connectivity/dns/vnet-dns-link.bicep \
+              --parameters @connectivity/dns/parameters/mgmt-dns-link.parameters.json || true
+          done
+
   validate-network:
     name: Validate Network Configuration
     needs: [deploy-management-network, deploy-identity-network, integrate-dns]
     runs-on: ubuntu-latest
     if: always() && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      # (all steps unchanged)
-      # ... rest of the steps remain the same as your original code ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure (Connectivity Subscription)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+
+      - name: Validate hub-spoke peering
+        shell: pwsh
+        run: |
+          Write-Host "Validating VNet peering configuration..."
+          $hubPeerings = az network vnet peering list `
+            --resource-group "${{ env.HUB_RESOURCE_GROUP }}" `
+            --vnet-name "${{ env.HUB_VNET_NAME }}" | ConvertFrom-Json
+          $report = @{
+            timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            environment = "${{ env.ENVIRONMENT }}"
+            hubVNet = "${{ env.HUB_VNET_NAME }}"
+            peerings = @()
+          }
+          foreach ($peering in $hubPeerings) {
+            $spokeName = $peering.name -replace "peering-to-", ""
+            $peeringStatus = [PSCustomObject]@{
+              spokeName = $spokeName
+              peeringState = $peering.peeringState
+              remoteVNetId = $peering.remoteVirtualNetwork.id
+              allowGatewayTransit = $peering.allowGatewayTransit
+              useRemoteGateways = $peering.useRemoteGateways
+              status = if ($peering.peeringState -eq "Connected") { "✅ Connected" } else { "❌ $($peering.peeringState)" }
+            }
+            $report.peerings += $peeringStatus
+          }
+          $reportContent = @"
+          # Enterprise Network Configuration Report
+
+          **Date:** $($report.timestamp)
+          **Environment:** $($report.environment)
+          **Hub VNet:** $($report.hubVNet)
+
+          ## VNet Peering Status
+
+          | Spoke Name | Status | Remote VNet | Gateway Transit | Use Remote Gateways |
+          |------------|--------|------------|----------------|-------------------|
+          "@
+          foreach ($peering in $report.peerings) {
+            $reportContent += "`n| $($peering.spokeName) | $($peering.status) | $($peering.remoteVNetId) | $($peering.allowGatewayTransit) | $($peering.useRemoteGateways) |"
+          }
+          $reportContent | Out-File -FilePath network-topology.md
+          cat network-topology.md
+          $reportContent | Out-File -FilePath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload network topology report
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-topology-report
+          path: network-topology.md
+          retention-days: 30
