@@ -28,18 +28,18 @@ permissions:
   contents: read
 
 env:
-  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID:             ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID:             ${{ secrets.AZURE_CLIENT_ID }}
   CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
-  MANAGEMENT_SUBSCRIPTION_ID: ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
-  IDENTITY_SUBSCRIPTION_ID: ${{ secrets.IDENTITY_SUBSCRIPTION_ID }}
+  MANAGEMENT_SUBSCRIPTION_ID:  ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
+  IDENTITY_SUBSCRIPTION_ID:    ${{ secrets.IDENTITY_SUBSCRIPTION_ID }}
   LANDINGZONE_A2_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}
   LANDINGZONE_P1_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}
-  SANDBOX_SUBSCRIPTION_ID: ${{ secrets.SANDBOX_SUBSCRIPTION_ID }}
-  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
-  LOCATION: ${{ github.event.inputs.region || 'eastus2' }}
-  HUB_RESOURCE_GROUP: "rg-connectivity-hub"
-  HUB_VNET_NAME: "vnet-hub"
+  SANDBOX_SUBSCRIPTION_ID:     ${{ secrets.SANDBOX_SUBSCRIPTION_ID }}
+  ENVIRONMENT:                ${{ github.event.inputs.environment || 'production' }}
+  LOCATION:                   ${{ github.event.inputs.region || 'eastus2' }}
+  HUB_RESOURCE_GROUP:         "rg-connectivity-hub"
+  HUB_VNET_NAME:              "vnet-hub"
 
 jobs:
   validate-prerequisites:
@@ -48,18 +48,17 @@ jobs:
     outputs:
       hub_exists: ${{ steps.hub-info.outputs.hub_exists }}
       management_subscription_set: ${{ steps.setoutputs.outputs.management_subscription_set }}
-      identity_subscription_set: ${{ steps.setoutputs.outputs.identity_subscription_set }}
+      identity_subscription_set:   ${{ steps.setoutputs.outputs.identity_subscription_set }}
       landingzone_a2_subscription_set: ${{ steps.setoutputs.outputs.landingzone_a2_subscription_set }}
-      sandbox_subscription_set: ${{ steps.setoutputs.outputs.sandbox_subscription_set }}
+      sandbox_subscription_set:    ${{ steps.setoutputs.outputs.sandbox_subscription_set }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Verify hub network exists
+      - name: Login to Azure (Connectivity)
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          client-id:       ${{ env.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
 
       - name: Get hub network information
@@ -68,25 +67,18 @@ jobs:
           HUB_RG="${{ env.HUB_RESOURCE_GROUP }}"
           HUB_VNET="${{ env.HUB_VNET_NAME }}"
           if ! az group show --name "$HUB_RG" &>/dev/null; then
-            echo "::warning::Hub resource group $HUB_RG not found. Did you run deploy-connectivity.yml first?"
             echo "hub_exists=false" >> $GITHUB_OUTPUT
-            echo "HUB_EXISTS=false" >> $GITHUB_ENV
             exit 0
           fi
           if ! az network vnet show --resource-group "$HUB_RG" --name "$HUB_VNET" &>/dev/null; then
-            echo "::warning::Hub VNet $HUB_VNET not found in $HUB_RG. Did you run deploy-connectivity.yml first?"
             echo "hub_exists=false" >> $GITHUB_OUTPUT
-            echo "HUB_EXISTS=false" >> $GITHUB_ENV
             exit 0
           fi
           HUB_VNET_ID=$(az network vnet show --resource-group "$HUB_RG" --name "$HUB_VNET" --query id -o tsv)
           echo "HUB_VNET_ID=$HUB_VNET_ID" >> $GITHUB_ENV
-          HUB_ADDRESS_SPACE=$(az network vnet show --resource-group "$HUB_RG" --name "$HUB_VNET" --query "addressSpace.addressPrefixes[0]" -o tsv)
-          echo "HUB_ADDRESS_SPACE=$HUB_ADDRESS_SPACE" >> $GITHUB_ENV
           echo "hub_exists=true" >> $GITHUB_OUTPUT
-          echo "HUB_EXISTS=true" >> $GITHUB_ENV
 
-      - name: Set outputs for job-level conditions
+      - name: Set outputs for subscription flags
         id: setoutputs
         run: |
           echo "management_subscription_set=${{ env.MANAGEMENT_SUBSCRIPTION_ID != '' }}" >> $GITHUB_OUTPUT
@@ -100,9 +92,8 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.management_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'management') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      # ... (all original steps as in your previous workflow for management spoke) ...
+      - uses: actions/checkout@v4
+      # … your existing management-speoke steps …
 
   deploy-identity-network:
     name: Deploy Identity Spoke
@@ -110,9 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.identity_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'identity') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      # ... (all original steps as in your previous workflow for identity spoke) ...
+      - uses: actions/checkout@v4
+      # … your existing identity-spoke steps …
 
   deploy-landingzone-a2-network:
     name: Deploy Analytics Landing Zone Spoke
@@ -120,180 +110,110 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.landingzone_a2_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'landingzone-a2') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      # ... (all original steps as in your previous workflow for A2 spoke) ...
+      - uses: actions/checkout@v4
+      # … your existing A2-spoke steps …
 
   deploy-sandbox-network:
-    name: Deploy Sandbox Spoke
+    name: Deploy Sandbox Spoke & Peerings
     needs: validate-prerequisites
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.sandbox_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'sandbox') && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Create sandbox network parameters
-        run: |
-          mkdir -p connectivity/spoke-network/parameters
-          cat > connectivity/spoke-network/parameters/sandbox-spoke.parameters.json << EOL
-          {
-            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-            "contentVersion": "1.0.0.0",
-            "parameters": {
-              "spokeName": {
-                "value": "sandbox"
-              },
-              "environment": {
-                "value": "${{ env.ENVIRONMENT }}"
-              },
-              "location": {
-                "value": "${{ env.LOCATION }}"
-              },
-              "addressPrefix": {
-                "value": "10.4.0.0/16"
-              },
-              "subnets": {
-                "value": [
-                  {
-                    "name": "snet-sandbox-default",
-                    "properties": {
-                      "addressPrefix": "10.4.0.0/24",
-                      "privateEndpointNetworkPolicies": "Disabled"
-                    }
-                  }
-                ]
-              },
-              "tags": {
-                "value": {
-                  "environment": "${{ env.ENVIRONMENT }}",
-                  "networkType": "spoke",
-                  "spokeType": "sandbox"
-                }
-              }
-            }
-          }
-          EOL
-
-      - name: Login to Azure (Sandbox Subscription)
+      - name: Login to Azure (Sandbox)
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          client-id:       ${{ env.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.SANDBOX_SUBSCRIPTION_ID }}
 
-      - name: Deploy sandbox spoke network
+      - name: Create sandbox spoke parameters
         run: |
-          RESOURCE_GROUP="rg-sandbox-network"
-          LOCATION="${{ env.LOCATION }}"
-          echo "Creating/Verifying resource group $RESOURCE_GROUP..."
-          az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --tags environment=${{ env.ENVIRONMENT }} networkType=spoke
-          echo "Deploying sandbox spoke network..."
+          mkdir -p connectivity/spoke-network/parameters
+          cat > connectivity/spoke-network/parameters/sandbox-spoke.parameters.json << 'EOF'
+          {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "spokeName":         { "value": "sandbox" },
+              "environment":       { "value": "${{ env.ENVIRONMENT }}" },
+              "location":          { "value": "${{ env.LOCATION }}" },
+              "addressPrefix":     { "value": "10.4.0.0/16" },
+              "subnets":           { "value": [ { "name": "snet-sandbox-default", "properties": { "addressPrefix": "10.4.0.0/24", "privateEndpointNetworkPolicies": "Disabled" } } ] },
+              "tags":              { "value": { "environment": "${{ env.ENVIRONMENT }}", "networkType": "spoke", "spokeType": "sandbox" } }
+            }
+          }
+          EOF
+
+      - name: Deploy Sandbox Spoke network
+        run: |
+          rg="rg-sandbox-network"
+          loc="${{ env.LOCATION }}"
+          az group create --name "$rg" --location "$loc" --tags environment=${{ env.ENVIRONMENT }} networkType=spoke
           az deployment group create \
-            --name "sandbox-network-$(date +%Y%m%d%H%M%S)" \
-            --resource-group "$RESOURCE_GROUP" \
+            --resource-group "$rg" \
             --template-file connectivity/spoke-network/spoke-network.bicep \
-            --parameters @connectivity/spoke-network/parameters/sandbox-spoke.parameters.json
-          SANDBOX_VNET_ID=$(az network vnet show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "vnet-sandbox" \
-            --query id -o tsv)
-          echo "Sandbox spoke network deployed: $SANDBOX_VNET_ID"
+            --parameters connectivity/spoke-network/parameters/sandbox-spoke.parameters.json
+          SANDBOX_VNET_ID=$(az network vnet show --resource-group "$rg" --name "vnet-sandbox" --query id -o tsv)
           echo "SANDBOX_VNET_ID=$SANDBOX_VNET_ID" >> $GITHUB_ENV
 
-      - name: Set up VNet peering to hub
+      - name: Deploy spoke→hub VNet peering
         run: |
-          echo "Creating VNet peering from sandbox to hub..."
-          cat > connectivity/peering/parameters/sandbox-hub-peering.parameters.json << EOL
-          {
-            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-            "contentVersion": "1.0.0.0",
-            "parameters": {
-              "sourceVnetName": {
-                "value": "vnet-sandbox"
-              },
-              "destinationVnetId": {
-                "value": "${{ env.HUB_VNET_ID }}"
-              },
-              "allowGatewayTransit": {
-                "value": false
-              },
-              "useRemoteGateways": {
-                "value": true
-              },
-              "allowForwardedTraffic": {
-                "value": true
-              },
-              "allowVirtualNetworkAccess": {
-                "value": true
-              }
-            }
-          }
-          EOL
-          az deployment group create \
-            --name "sandbox-to-hub-peering-$(date +%Y%m%d%H%M%S)" \
-            --resource-group "rg-sandbox-network" \
+          az deployment sub create \
+            --location ${{ env.LOCATION }} \
             --template-file connectivity/peering/vnet-peering.bicep \
-            --parameters @connectivity/peering/parameters/sandbox-hub-peering.parameters.json
+            --parameters \
+              sourceSubscriptionId=${{ env.SANDBOX_SUBSCRIPTION_ID }} \
+              sourceResourceGroupName="rg-sandbox-network" \
+              sourceVnetName="vnet-sandbox" \
+              destinationSubscriptionId=${{ env.CONNECTIVITY_SUBSCRIPTION_ID }} \
+              destinationResourceGroupName="${{ env.HUB_RESOURCE_GROUP }}" \
+              destinationVnetName="${{ env.HUB_VNET_NAME }}" \
+              peeringName="spoke-to-hub" \
+              useRemoteGateways=true
 
-      - name: Login to connectivity subscription for reverse peering
+      - name: Deploy hub→spoke VNet peering
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          client-id:       ${{ env.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-
-      - name: Create hub to sandbox peering
-        run: |
-          echo "Creating VNet peering from hub to sandbox..."
-          cat > connectivity/peering/parameters/hub-sandbox-peering.parameters.json << EOL
-          {
-            "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-            "contentVersion": "1.0.0.0",
-            "parameters": {
-              "sourceVnetName": {
-                "value": "${{ env.HUB_VNET_NAME }}"
-              },
-              "destinationVnetId": {
-                "value": "${{ env.SANDBOX_VNET_ID }}"
-              },
-              "allowGatewayTransit": {
-                "value": true
-              },
-              "useRemoteGateways": {
-                "value": false
-              },
-              "allowForwardedTraffic": {
-                "value": true
-              },
-              "allowVirtualNetworkAccess": {
-                "value": true
-              }
-            }
-          }
-          EOL
-          az deployment group create \
-            --name "hub-to-sandbox-peering-$(date +%Y%m%d%H%M%S)" \
-            --resource-group "${{ env.HUB_RESOURCE_GROUP }}" \
+      - run: |
+          az deployment sub create \
+            --location ${{ env.LOCATION }} \
             --template-file connectivity/peering/vnet-peering.bicep \
-            --parameters @connectivity/peering/parameters/hub-sandbox-peering.parameters.json
+            --parameters \
+              sourceSubscriptionId=${{ env.CONNECTIVITY_SUBSCRIPTION_ID }} \
+              sourceResourceGroupName="${{ env.HUB_RESOURCE_GROUP }}" \
+              sourceVnetName="${{ env.HUB_VNET_NAME }}" \
+              destinationSubscriptionId=${{ env.SANDBOX_SUBSCRIPTION_ID }} \
+              destinationResourceGroupName="rg-sandbox-network" \
+              destinationVnetName="vnet-sandbox" \
+              peeringName="hub-to-spoke" \
+              allowGatewayTransit=true
 
   integrate-dns:
     name: Integrate Private DNS Zones
-    needs: [deploy-management-network, deploy-identity-network, deploy-sandbox-network]
+    needs:
+      - deploy-management-network
+      - deploy-identity-network
+      - deploy-sandbox-network
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      # ... (original DNS steps; add sandbox as desired for linking DNS zones) ...
+      - uses: actions/checkout@v4
+      # … your existing DNS integration steps …
 
   validate-network:
     name: Validate Network Configuration
-    needs: [deploy-management-network, deploy-identity-network, deploy-sandbox-network, integrate-dns]
+    needs:
+      - deploy-management-network
+      - deploy-identity-network
+      - deploy-sandbox-network
+      - integrate-dns
     runs-on: ubuntu-latest
     if: always() && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      # ... (original validation steps) ...
+      - uses: actions/checkout@v4
+      # … your existing validation steps …
