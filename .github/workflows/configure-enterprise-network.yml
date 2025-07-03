@@ -1,3 +1,5 @@
+# .github/workflows/configure-enterprise-network-architecture.yml
+
 name: Configure Enterprise Network Architecture
 
 on:
@@ -28,31 +30,33 @@ permissions:
   contents: read
 
 env:
-  AZURE_TENANT_ID:             ${{ secrets.AZURE_TENANT_ID }}
-  AZURE_CLIENT_ID:             ${{ secrets.AZURE_CLIENT_ID }}
-  CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
-  MANAGEMENT_SUBSCRIPTION_ID:  ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
-  IDENTITY_SUBSCRIPTION_ID:    ${{ secrets.IDENTITY_SUBSCRIPTION_ID }}
-  LANDINGZONE_A2_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}
-  LANDINGZONE_P1_SUBSCRIPTION_ID: ${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}
-  SANDBOX_SUBSCRIPTION_ID:     ${{ secrets.SANDBOX_SUBSCRIPTION_ID }}
-  ENVIRONMENT:                ${{ github.event.inputs.environment || 'production' }}
-  LOCATION:                   ${{ github.event.inputs.region || 'eastus2' }}
-  HUB_RESOURCE_GROUP:         "rg-connectivity-hub"
-  HUB_VNET_NAME:              "vnet-hub"
+  AZURE_TENANT_ID:               ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID:               ${{ secrets.AZURE_CLIENT_ID }}
+  CONNECTIVITY_SUBSCRIPTION_ID:  ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
+  MANAGEMENT_SUBSCRIPTION_ID:    ${{ secrets.MANAGEMENT_SUBSCRIPTION_ID }}
+  IDENTITY_SUBSCRIPTION_ID:      ${{ secrets.IDENTITY_SUBSCRIPTION_ID }}
+  LANDINGZONE_A2_SUBSCRIPTION_ID:${{ secrets.LANDINGZONE_A2_SUBSCRIPTION_ID }}
+  LANDINGZONE_P1_SUBSCRIPTION_ID:${{ secrets.LANDINGZONE_P1_SUBSCRIPTION_ID }}
+  SANDBOX_SUBSCRIPTION_ID:       ${{ secrets.SANDBOX_SUBSCRIPTION_ID }}
+  ENVIRONMENT:                   ${{ github.event.inputs.environment }}
+  LOCATION:                      ${{ github.event.inputs.region }}
+  HUB_RESOURCE_GROUP:            "rg-connectivity-hub"
+  HUB_VNET_NAME:                 "vnet-hub"
 
 jobs:
+
   validate-prerequisites:
     name: Validate Network Prerequisites
     runs-on: ubuntu-latest
     outputs:
-      hub_exists: ${{ steps.hub-info.outputs.hub_exists }}
-      management_subscription_set: ${{ steps.setoutputs.outputs.management_subscription_set }}
-      identity_subscription_set:   ${{ steps.setoutputs.outputs.identity_subscription_set }}
-      landingzone_a2_subscription_set: ${{ steps.setoutputs.outputs.landingzone_a2_subscription_set }}
-      sandbox_subscription_set:    ${{ steps.setoutputs.outputs.sandbox_subscription_set }}
+      hub_exists:                     ${{ steps.hub-info.outputs.hub_exists }}
+      management_subscription_set:    ${{ steps.setoutputs.outputs.management_subscription_set }}
+      identity_subscription_set:      ${{ steps.setoutputs.outputs.identity_subscription_set }}
+      landingzone_a2_subscription_set:${{ steps.setoutputs.outputs.landingzone_a2_subscription_set }}
+      sandbox_subscription_set:       ${{ steps.setoutputs.outputs.sandbox_subscription_set }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Login to Azure (Connectivity)
         uses: azure/login@v2
@@ -74,7 +78,10 @@ jobs:
             echo "hub_exists=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          HUB_VNET_ID=$(az network vnet show --resource-group "$HUB_RG" --name "$HUB_VNET" --query id -o tsv)
+          HUB_VNET_ID=$(az network vnet show \
+            --resource-group "$HUB_RG" \
+            --name "$HUB_VNET" \
+            --query id -o tsv)
           echo "HUB_VNET_ID=$HUB_VNET_ID" >> $GITHUB_ENV
           echo "hub_exists=true" >> $GITHUB_OUTPUT
 
@@ -86,40 +93,60 @@ jobs:
           echo "landingzone_a2_subscription_set=${{ env.LANDINGZONE_A2_SUBSCRIPTION_ID != '' }}" >> $GITHUB_OUTPUT
           echo "sandbox_subscription_set=${{ env.SANDBOX_SUBSCRIPTION_ID != '' }}" >> $GITHUB_OUTPUT
 
+
   deploy-management-network:
     name: Deploy Management Spoke
     needs: validate-prerequisites
     runs-on: ubuntu-latest
-    if: needs.validate-prerequisites.outputs.management_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'management') && needs.validate-prerequisites.outputs.hub_exists == 'true'
+    if: >
+      needs.validate-prerequisites.outputs.management_subscription_set == 'true' &&
+      !contains(github.event.inputs.skipSpokes, 'management') &&
+      needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - uses: actions/checkout@v4
-      # … your existing management-speoke steps …
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      # ... insert your existing Management Spoke deployment steps here ...
+
 
   deploy-identity-network:
     name: Deploy Identity Spoke
     needs: validate-prerequisites
     runs-on: ubuntu-latest
-    if: needs.validate-prerequisites.outputs.identity_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'identity') && needs.validate-prerequisites.outputs.hub_exists == 'true'
+    if: >
+      needs.validate-prerequisites.outputs.identity_subscription_set == 'true' &&
+      !contains(github.event.inputs.skipSpokes, 'identity') &&
+      needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - uses: actions/checkout@v4
-      # … your existing identity-spoke steps …
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      # ... insert your existing Identity Spoke deployment steps here ...
+
 
   deploy-landingzone-a2-network:
     name: Deploy Analytics Landing Zone Spoke
     needs: validate-prerequisites
     runs-on: ubuntu-latest
-    if: needs.validate-prerequisites.outputs.landingzone_a2_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'landingzone-a2') && needs.validate-prerequisites.outputs.hub_exists == 'true'
+    if: >
+      needs.validate-prerequisites.outputs.landingzone_a2_subscription_set == 'true' &&
+      !contains(github.event.inputs.skipSpokes, 'landingzone-a2') &&
+      needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - uses: actions/checkout@v4
-      # … your existing A2-spoke steps …
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      # ... insert your existing A2 Spoke deployment steps here ...
+
 
   deploy-sandbox-network:
     name: Deploy Sandbox Spoke & Peerings
     needs: validate-prerequisites
     runs-on: ubuntu-latest
-    if: needs.validate-prerequisites.outputs.sandbox_subscription_set == 'true' && !contains(github.event.inputs.skipSpokes, 'sandbox') && needs.validate-prerequisites.outputs.hub_exists == 'true'
+    if: >
+      needs.validate-prerequisites.outputs.sandbox_subscription_set == 'true' &&
+      !contains(github.event.inputs.skipSpokes, 'sandbox') &&
+      needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Login to Azure (Sandbox)
         uses: azure/login@v2
@@ -128,25 +155,7 @@ jobs:
           tenant-id:       ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.SANDBOX_SUBSCRIPTION_ID }}
 
-      - name: Create sandbox spoke parameters
-        run: |
-          mkdir -p connectivity/spoke-network/parameters
-          cat > connectivity/spoke-network/parameters/sandbox-spoke.parameters.json << 'EOF'
-          {
-            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-            "contentVersion": "1.0.0.0",
-            "parameters": {
-              "spokeName":         { "value": "sandbox" },
-              "environment":       { "value": "${{ env.ENVIRONMENT }}" },
-              "location":          { "value": "${{ env.LOCATION }}" },
-              "addressPrefix":     { "value": "10.4.0.0/16" },
-              "subnets":           { "value": [ { "name": "snet-sandbox-default", "properties": { "addressPrefix": "10.4.0.0/24", "privateEndpointNetworkPolicies": "Disabled" } } ] },
-              "tags":              { "value": { "environment": "${{ env.ENVIRONMENT }}", "networkType": "spoke", "spokeType": "sandbox" } }
-            }
-          }
-          EOF
-
-      - name: Deploy Sandbox Spoke network
+      - name: Create Sandbox Spoke network
         run: |
           rg="rg-sandbox-network"
           loc="${{ env.LOCATION }}"
@@ -155,10 +164,13 @@ jobs:
             --resource-group "$rg" \
             --template-file connectivity/spoke-network/spoke-network.bicep \
             --parameters connectivity/spoke-network/parameters/sandbox-spoke.parameters.json
-          SANDBOX_VNET_ID=$(az network vnet show --resource-group "$rg" --name "vnet-sandbox" --query id -o tsv)
+          SANDBOX_VNET_ID=$(az network vnet show \
+            --resource-group "$rg" \
+            --name "vnet-sandbox" \
+            --query id -o tsv)
           echo "SANDBOX_VNET_ID=$SANDBOX_VNET_ID" >> $GITHUB_ENV
 
-      - name: Deploy spoke→hub VNet peering
+      - name: Deploy Spoke→Hub VNet peering
         run: |
           az deployment sub create \
             --location ${{ env.LOCATION }} \
@@ -173,13 +185,15 @@ jobs:
               peeringName="spoke-to-hub" \
               useRemoteGateways=true
 
-      - name: Deploy hub→spoke VNet peering
+      - name: Login to Azure (Connectivity) for reverse peering
         uses: azure/login@v2
         with:
           client-id:       ${{ env.AZURE_CLIENT_ID }}
           tenant-id:       ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
-      - run: |
+
+      - name: Deploy Hub→Spoke VNet peering
+        run: |
           az deployment sub create \
             --location ${{ env.LOCATION }} \
             --template-file connectivity/peering/vnet-peering.bicep \
@@ -193,6 +207,7 @@ jobs:
               peeringName="hub-to-spoke" \
               allowGatewayTransit=true
 
+
   integrate-dns:
     name: Integrate Private DNS Zones
     needs:
@@ -202,18 +217,42 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - uses: actions/checkout@v4
-      # … your existing DNS integration steps …
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      # ... insert your existing DNS integration steps here ...
+
 
   validate-network:
     name: Validate Network Configuration
     needs:
       - deploy-management-network
       - deploy-identity-network
+      - deploy-landingzone-a2-network
       - deploy-sandbox-network
       - integrate-dns
     runs-on: ubuntu-latest
     if: always() && needs.validate-prerequisites.outputs.hub_exists == 'true'
     steps:
-      - uses: actions/checkout@v4
-      # … your existing validation steps …
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Azure CLI if missing
+        run: |
+          if ! command -v az &>/dev/null; then
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          fi
+
+      - name: Login to Azure (Connectivity)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ env.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.CONNECTIVITY_SUBSCRIPTION_ID }}
+
+      - name: Run network validation script
+        env:
+          CONNECTIVITY_SUBSCRIPTION_ID: ${{ secrets.CONNECTIVITY_SUBSCRIPTION_ID }}
+          SANDBOX_SUBSCRIPTION_ID:     ${{ secrets.SANDBOX_SUBSCRIPTION_ID }}
+        run: |
+          chmod +x scripts/check-network.sh
+          ./scripts/check-network.sh
