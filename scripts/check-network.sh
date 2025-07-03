@@ -23,10 +23,10 @@ echo "🔑 Using Connectivity subscription: $CONNECTIVITY_SUB"
 echo "🔑 Using Sandbox subscription:     $SANDBOX_SUB"
 
 # ────────────────────────────────────────────────────────────────────────
-# 2) Define your RG & VNet names
+# 2) Define your RG & VNet names (Hub RG has been corrected)
 # ────────────────────────────────────────────────────────────────────────
 
-HUB_RG="rg-connectivity-hub"
+HUB_RG="rg-network"       # ← your real Hub resource group
 HUB_VNET="vnet-hub"
 
 SANDBOX_RG="rg-sandbox-network"
