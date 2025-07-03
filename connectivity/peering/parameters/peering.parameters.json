@@ -2,26 +2,16 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "hubVnetId": {
-      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-connectivity-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub"
-    },
-    "spokeVnetId": {
-      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-devtest-lab/providers/Microsoft.Network/virtualNetworks/vnet-devtest"
-    },
-    "hubToSpokePeeringName": {
-      "value": "peer-hub-to-devtest"
-    },
-    "spokeToHubPeeringName": {
-      "value": "peer-devtest-to-hub"
-    },
-    "allowForwardedTraffic": {
-      "value": true
-    },
-    "allowGatewayTransit": {
-      "value": true
-    },
-    "useRemoteGateways": {
-      "value": false
-    }
+    "sourceSubscriptionId":        { "value": "00000000-0000-0000-0000-111111111111" },  // Sandbox sub
+    "sourceResourceGroupName":     { "value": "rg-network-sandbox" },
+    "sourceVnetName":              { "value": "sandbox-spoke-vnet" },
+    "destinationSubscriptionId":   { "value": "00000000-0000-0000-0000-222222222222" },  // Connectivity sub
+    "destinationResourceGroupName":{ "value": "rg-network" },
+    "destinationVnetName":         { "value": "hub-vnet" },
+    "peeringName":                 { "value": "spoke-to-hub" },
+    "allowVirtualNetworkAccess":   { "value": true },
+    "allowForwardedTraffic":       { "value": true },
+    "allowGatewayTransit":         { "value": false },
+    "useRemoteGateways":           { "value": true }
   }
 }

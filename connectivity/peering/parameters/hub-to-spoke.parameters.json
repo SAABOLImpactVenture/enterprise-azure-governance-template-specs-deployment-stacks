@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "sourceSubscriptionId":        { "value": "00000000-0000-0000-0000-222222222222" },  // Connectivity sub
+    "sourceResourceGroupName":     { "value": "rg-network" },
+    "sourceVnetName":              { "value": "hub-vnet" },
+    "destinationSubscriptionId":   { "value": "00000000-0000-0000-0000-111111111111" },  // Sandbox sub
+    "destinationResourceGroupName":{ "value": "rg-network-sandbox" },
+    "destinationVnetName":         { "value": "sandbox-spoke-vnet" },
+    "peeringName":                 { "value": "hub-to-spoke" },
+    "allowVirtualNetworkAccess":   { "value": true },
+    "allowForwardedTraffic":       { "value": true },
+    "allowGatewayTransit":         { "value": true },
+    "useRemoteGateways":           { "value": false }
+  }
+}
