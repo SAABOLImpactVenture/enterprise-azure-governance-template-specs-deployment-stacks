@@ -56,11 +56,66 @@ smart-contracts/
 
 ---
 
-## 🧠 Future Considerations
+# Summary 
 
-- Add support for **deployment stacks**
-- Use **Just-in-Time (JIT) access** for VMs
-- Integrate **Azure Key Vault** for secrets
-- Add **gas usage analytics** to CI/CD
-- Enable **multi-network deployments** for Ethereum-compatible chains
+This summary focuses on the infrastructure, blockchain, and smart contract components described in `architecture.md`.
+
+---
+
+## Infrastructure (Landing Zone Architecture)
+
+- The repo enables a modular, enterprise-ready Azure cloud setup using Infrastructure-as-Code and automation.
+
+**Key components:**
+- Management Group hierarchy for governance.
+- Azure Policy for compliance and enforcement.
+- Role-Based Access Control (RBAC) for security.
+- Resource group scaffolding for organizing resources.
+- Networking baselines: virtual networks (vNETs), subnets, and network security groups (NSGs).
+
+**Technologies:**
+- Azure Bicep for infrastructure definitions.
+- Template Specs as a replacement for Blueprints.
+- GitHub Actions for CI/CD automation.
+
+---
+
+## Blockchain & Smart Contracts
+
+- The smart contract stack is built around Ethereum and Solidity.
+
+**Core elements:**
+- Solidity for contract development.
+- Hardhat for developing, testing, and deploying contracts.
+- Ethers.js for blockchain interaction.
+- GitHub Actions for CI/CD.
+
+**Directory structure:**
+- `contracts/`: Solidity source files.
+- `scripts/`: Deployment automation.
+- `test/`: Hardhat tests.
+- `hardhat.config.js`: Project configuration.
+
+---
+
+## Integration Points
+
+- GitHub Actions: Automates build, test, and deployment for both infra and smart contracts.
+- Azure DevTest Labs: Provides sandbox environments for development.
+- Azure Monitor + NSGs: For security and monitoring.
+- Template Specs (Bicep): Infrastructure as Code for repeatable deployments.
+
+---
+
+## Future Considerations (Planned Enhancements)
+
+- Support for deployment stacks.
+- Just-in-Time access for improved VM security.
+- Azure Key Vault integration for secrets management.
+- Gas usage analytics in CI/CD.
+- Multi-network Ethereum deployment support.
+
+---
+
+
 
