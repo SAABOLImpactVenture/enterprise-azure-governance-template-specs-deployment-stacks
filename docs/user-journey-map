@@ -1,5 +1,102 @@
-# User Journey Map: Transitioning from Azure Blueprints to Template Specs & Deployment Stacks
+# User Journey Map: Establishing Foundation Architecture for Blockchain & Smart Contracts on Azure
 
 ## Persona
 - **Role:** Enterprise Architect / Cloud Center of Excellence (CCoE) Team Member
-- **Goal:** Enforce cloud governance and compliance using
+- **Goal:** Establish a secure, compliant, and scalable Azure foundation that enables blockchain infrastructure and smart contract development.
+
+---
+
+## 1. Discovery & Planning
+
+**Actions:**
+- Assess organizational requirements for blockchain adoption and governance.
+- Identify stakeholders (security, compliance, development teams).
+- Review Azure governance best practices and current templates.
+
+**Pain Points:**
+- Navigating Azure’s evolving governance models.
+- Aligning blockchain needs with enterprise compliance.
+
+**Outcomes:**
+- Clear list of requirements for blockchain and smart contracts.
+- Buy-in from key stakeholders.
+
+---
+
+## 2. Foundation Architecture Design
+
+**Actions:**
+- Map out the core Azure architecture (landing zones, policies, RBAC, networking).
+- Integrate blockchain-specific requirements (network topology, node security, consensus mechanisms).
+- Select blockchain technology (e.g., Ethereum, Hyperledger) and smart contract languages (e.g., Solidity).
+
+**Pain Points:**
+- Ensuring governance policies don’t conflict with blockchain decentralization.
+- Balancing flexibility for smart contracts with security controls.
+
+**Outcomes:**
+- Reference architecture diagrams.
+- Governance blueprint tailored to blockchain.
+
+---
+
+## 3. Laying Out Blockchain Infrastructure
+
+**Actions:**
+- Use Template Specs and Deployment Stacks to automate deployment of blockchain networks (e.g., Azure Blockchain Service, VM-based networks).
+- Define reusable modules for common blockchain components (nodes, explorers, APIs).
+- Enforce policies for blockchain deployments (network isolation, key management).
+
+**Pain Points:**
+- Complexity of multi-tenant blockchain environments.
+- Automating secure and repeatable deployments.
+
+**Outcomes:**
+- Automated, policy-compliant blockchain environments.
+- Documentation of deployment stacks for blockchain use cases.
+
+---
+
+## 4. Enabling Smart Contract Development
+
+**Actions:**
+- Provide development environments and CI/CD pipelines for smart contracts using Infrastructure-as-Code.
+- Integrate security and compliance checks for smart contract code (linting, static analysis).
+- Set up test networks and sandboxes for contract validation.
+
+**Pain Points:**
+- Onboarding developers to enterprise-secured environments.
+- Balancing agility in smart contract iteration with governance requirements.
+
+**Outcomes:**
+- Developer-ready environments for secure smart contract development.
+- Pipelines for automated testing and deployment.
+
+---
+
+## 5. Governance, Monitoring & Continuous Improvement
+
+**Actions:**
+- Implement monitoring and alerting for blockchain operations and contract execution.
+- Collect feedback from users and iterate on architecture and templates.
+- Keep up to date with Azure and blockchain platform updates.
+
+**Pain Points:**
+- Evolving compliance requirements.
+- Keeping foundation architecture in sync with business needs and technology changes.
+
+**Outcomes:**
+- Continuous improvement of governance foundation.
+- Streamlined, compliant smart contract delivery lifecycle.
+
+---
+
+## Visual Summary (Suggested for Diagrams)
+
+1. **Plan:** Assess needs → Identify stakeholders → Define governance objectives  
+2. **Design:** Architect Azure foundation → Integrate blockchain components  
+3. **Deploy:** Automate blockchain infrastructure with Template Specs & Stacks  
+4. **Develop:** Enable smart contract development with secure CI/CD  
+5. **Operate:** Monitor, govern, and iterate
+
+---
