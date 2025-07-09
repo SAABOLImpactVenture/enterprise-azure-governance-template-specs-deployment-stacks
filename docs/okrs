@@ -1,0 +1,34 @@
+## Objectives & Key Results (OKRs)
+
+### **Objective 1: Streamline Enterprise Azure Governance with Modern Infrastructure-as-Code**
+- **KR1:** Publish a comprehensive migration guide for Azure Blueprints to Template Specs and Deployment Stacks, validated by at least 3 enterprise case studies.
+- **KR2:** Release 5+ modular, reusable Bicep templates covering standard governance scenarios.
+- **KR3:** Achieve successful automated deployments across at least 3 Azure tenants using CI/CD pipelines.
+
+---
+
+### **Objective 2: Enable Automated, Policy-Driven Cloud Compliance**
+- **KR1:** Implement automated PowerShell/Shell scripts to enforce Azure Policy and RBAC, reaching 100% coverage for critical resources.
+- **KR2:** Integrate compliance checks into the CI/CD pipeline with automated reporting for non-compliance events.
+- **KR3:** Reduce manual compliance verification efforts by 50% through automation.
+
+---
+
+### **Objective 3: Establish Tamper-Proof, Auditable Governance via Business Blockchain**
+- **KR1:** Deploy Ethereum or EVM-compatible blockchain integration to record at least 90% of governance actions (e.g., policy applications, deployments).
+- **KR2:** Ensure all compliance and governance logs are immutable and verifiable through blockchain for at least three major workflows.
+- **KR3:** Document at least two business use cases where blockchain auditability adds measurable value to compliance or audit processes.
+
+---
+
+### **Objective 4: Drive Automated Compliance and Approvals through Smart Contracts**
+- **KR1:** Design and deploy three Solidity smart contracts for compliance attestation, policy versioning, and approval workflows.
+- **KR2:** Achieve end-to-end automation for at least two compliance approval workflows using smart contracts.
+- **KR3:** Collect and address feedback from at least five users or auditors on the utility and usability of blockchain-based smart contract automation.
+
+---
+
+### **Objective 5: Foster Community Adoption and Extensibility**
+- **KR1:** Grow external contributions by onboarding at least three new contributors for smart contracts or governance modules.
+- **KR2:** Host two webinars or community calls to showcase blockchain and smart contract integration in enterprise governance.
+- **KR3:** Increase repository stars or forks by 30% by the end of the next quarter.
