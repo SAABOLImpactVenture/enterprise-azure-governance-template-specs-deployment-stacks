@@ -36,17 +36,21 @@ param virtualNetworkId string
 @description('Whether to enable auto-registration of VM records')
 param registrationEnabled bool = false
 
-// Create virtual network link
+// Create virtual network link to enable DNS resolution between VNet and private DNS zone
+// This link allows resources in the VNet to resolve names from the private DNS zone
 resource privateDnsZoneVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  name: '${privateDnsZoneName}/${vnetLinkName}'
-  location: 'global'
+  name: '${privateDnsZoneName}/${vnetLinkName}' // Format: zone-name/link-name
+  location: 'global' // DNS zone links are global resources regardless of VNet location
   properties: {
+    // registrationEnabled controls automatic VM DNS record creation:
+    // - true: VMs in this VNet automatically get DNS records in the zone
+    // - false: Only manually created records or private endpoints resolve
     registrationEnabled: registrationEnabled
     virtualNetwork: {
-      id: virtualNetworkId
+      id: virtualNetworkId // Full resource ID of the target virtual network
     }
   }
 }
 
-// Output the resource ID of the link
+// Output the resource ID of the link for dependency tracking and validation
 output vnetLinkId string = privateDnsZoneVnetLink.id

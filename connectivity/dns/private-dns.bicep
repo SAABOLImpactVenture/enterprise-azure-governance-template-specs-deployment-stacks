@@ -97,45 +97,51 @@ param privateDnsZones array = [
   'privatelink.azurestaticapps.net'
 ]
 
-// Create the private DNS zones
+// Create the private DNS zones using array iteration
+// This loop creates all DNS zones specified in the privateDnsZones parameter
 resource privateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = [for zone in privateDnsZones: {
-  name: zone
-  location: 'global'
-  tags: tags
-  properties: {}
+  name: zone // Each zone name from the array (e.g., 'privatelink.blob.core.windows.net')
+  location: 'global' // Private DNS zones are global resources, not region-specific
+  tags: tags // Apply consistent tagging across all zones
+  properties: {} // No additional properties required for basic zone creation
 }]
 
-// Link private DNS zones to the hub VNet
+// Link private DNS zones to the hub VNet for centralized DNS resolution
+// This ensures the hub can resolve private endpoint names to IP addresses
 resource hubVnetDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = [for (zone, i) in privateDnsZones: {
-  name: '${privateDnsZone[i].name}/hub${linkNameSuffix}'
-  location: 'global'
+  name: '${privateDnsZone[i].name}/hub${linkNameSuffix}' // Format: zone-name/hub-link
+  location: 'global' // DNS links are also global resources
   tags: tags
   properties: {
-    registrationEnabled: false
+    registrationEnabled: false // Hub typically doesn't auto-register VM records
     virtualNetwork: {
-      id: hubVnetId
+      id: hubVnetId // Link to the central hub network
     }
   }
 }]
 
-// Link private DNS zones to each spoke VNet
+// Link private DNS zones to each spoke VNet for distributed DNS resolution
+// This creates a many-to-many relationship: each spoke gets linked to all DNS zones
 resource spokeVnetDnsZoneLinks 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = [for (spokeVnetId, i) in spokeVnetIds: {
+  // Create a link name that includes the spoke index and zone
+  // Note: This creates multiple links per spoke (one for each DNS zone)
   name: '${privateDnsZone[i % length(privateDnsZones)].name}/spoke-${i}${linkNameSuffix}'
   location: 'global'
   tags: tags
   properties: {
-    registrationEnabled: false
+    registrationEnabled: false // Spokes typically don't auto-register VM records either
     virtualNetwork: {
-      id: spokeVnetId
+      id: spokeVnetId // Link to the specific spoke network
     }
   }
   dependsOn: [
-    hubVnetDnsZoneLink
+    hubVnetDnsZoneLink // Ensure hub links are created first for proper ordering
   ]
 }]
 
-// Output the IDs of all created private DNS zones
+// Output the IDs of all created private DNS zones for downstream consumption
+// This array output makes it easy for other modules to reference the zones
 output privateDnsZoneIds array = [for (zone, i) in privateDnsZones: {
-  name: zone
-  id: privateDnsZone[i].id
+  name: zone // The zone name for easy identification
+  id: privateDnsZone[i].id // The Azure resource ID for programmatic reference
 }]
